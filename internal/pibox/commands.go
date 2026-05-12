@@ -126,6 +126,18 @@ func (a *App) runPi(ctx context.Context, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	return a.runPiArgs(ctx, fs.Args())
+}
+
+func (a *App) runResume(ctx context.Context, args []string) error {
+	fs := newFlagSet("resume", a.err)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	return a.runPiArgs(ctx, append([]string{"--resume"}, fs.Args()...))
+}
+
+func (a *App) runPiArgs(ctx context.Context, args []string) error {
 	r := osRunner{}
 	_, cfg, err := loadCurrentRepo(ctx, r)
 	if err != nil {
@@ -139,7 +151,7 @@ func (a *App) runPi(ctx context.Context, args []string) error {
 	if err := syncLocalPiCustomizations(ctx, ssh); err != nil {
 		return err
 	}
-	piArgs := shellQuoteAll(fs.Args())
+	piArgs := shellQuoteAll(args)
 	script := fmt.Sprintf(`
 set -eu
 export PATH="/root/.local/share/pi-node/current/bin:/root/.local/bin:/root/.pi/bin:/usr/local/bin:/usr/bin:/bin:$PATH"

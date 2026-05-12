@@ -29,6 +29,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.runSync(ctx, args[1:])
 	case "run":
 		return a.runPi(ctx, args[1:])
+	case "resume":
+		return a.runResume(ctx, args[1:])
 	case "vm":
 		return a.runVM(ctx, args[1:])
 	case "image":
@@ -48,6 +50,7 @@ Usage:
   pibox init repo
   pibox sync --from-host [--force]
   pibox run [-- <pi args...>]
+  pibox resume [-- <pi args...>]
   pibox sync
   pibox vm reset --yes
   pibox image update`)
@@ -80,6 +83,11 @@ The --from-host direction overwrites the VM-side copy of the current repo.`)
   pibox run [-- <pi args...>]
 
 Runs Pi as root inside the VM worktree for the current registered repo.`)
+	case "resume":
+		fmt.Fprintln(a.out, `Usage:
+  pibox resume [-- <pi args...>]
+
+Runs Pi with --resume as root inside the VM worktree for the current registered repo.`)
 	case "vm":
 		fmt.Fprintln(a.out, `Usage:
   pibox vm reset --yes
