@@ -214,6 +214,9 @@ func waitForDarwinGuestIP(ctx context.Context, mac, serialLog string, timeout ti
 		if ip, err := darwinGuestIPFromSerial(serialLog); err == nil && ip != "" {
 			return ip, nil
 		}
+		if tcpPortOpen(ctx, "192.168.64.2", 22, time.Second) {
+			return "192.168.64.2", nil
+		}
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
@@ -221,6 +224,16 @@ func waitForDarwinGuestIP(ctx context.Context, mac, serialLog string, timeout ti
 		}
 	}
 	return "", userError("VM avviata, ma non riesco a trovare l'IP assegnato dal NAT macOS.\n\nControlla i log:\n  " + serialLog + "\n  /var/db/dhcpd_leases")
+}
+
+func tcpPortOpen(ctx context.Context, host string, port int, timeout time.Duration) bool {
+	dialer := net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", host, port))
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }
 
 func darwinGuestIPFromSerial(path string) (string, error) {
