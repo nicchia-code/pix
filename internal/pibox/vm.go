@@ -79,7 +79,7 @@ func (v VM) ensureReady(ctx context.Context) (*SSH, error) {
 		return nil, err
 	}
 	if state.SSHPort == 0 {
-		return nil, userError("Backend VM non configurato.\n\nEsegui:\n  pibox init")
+		return nil, userError("Backend VM non configurato.\n\nEsegui:\n  pix init")
 	}
 	ssh := v.sshForState(root, state)
 	if err := ssh.Run(ctx, "", "true"); err != nil {
@@ -112,7 +112,7 @@ func (v VM) ensureQEMU(ctx context.Context, root, statePath string) error {
 		}
 	}
 	if state.SSHPort == 0 && processAlive(state.PID) {
-		return userError("La VM pibox sembra già in esecuzione, ma lo stato non contiene la porta SSH.\n\nNon avvio una seconda VM. Esegui `pibox vm reset --yes` se vuoi ricrearla.")
+		return userError("La VM pix sembra già in esecuzione, ma lo stato non contiene la porta SSH.\n\nNon avvio una seconda VM. Esegui `pix vm reset --yes` se vuoi ricrearla.")
 	}
 	if err := requireTool("qemu-img"); err != nil {
 		return err
@@ -163,7 +163,7 @@ func (v VM) ensureQEMU(ctx context.Context, root, statePath string) error {
 	_, _, err = v.runner.Run(ctx, "", nil, qemuBin, args...)
 	if err != nil {
 		if strings.Contains(err.Error(), "Failed to get \"write\" lock") {
-			return userError("Il disco della VM pibox è già bloccato da un processo QEMU.\n\nNon avvio una seconda VM. Se la VM è bloccata o lo stato è incoerente, usa:\n  pibox vm reset --yes")
+			return userError("Il disco della VM pix è già bloccato da un processo QEMU.\n\nNon avvio una seconda VM. Se la VM è bloccata o lo stato è incoerente, usa:\n  pix vm reset --yes")
 		}
 		return fmt.Errorf("avvio QEMU: %w", err)
 	}
@@ -201,7 +201,7 @@ func (v VM) writeSeed(ctx context.Context, root string, state VMState) error {
 	pubKeyPath := filepath.Join(root, "vm", "default", "ssh", "id_ed25519.pub")
 	pubKey, err := os.ReadFile(pubKeyPath)
 	if err != nil {
-		return fmt.Errorf("lettura chiave pubblica pibox: %w", err)
+		return fmt.Errorf("lettura chiave pubblica pix: %w", err)
 	}
 	dir := filepath.Join(root, "vm", "default", "cloud-init")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -418,7 +418,7 @@ func (v VM) ensureSSHKey(ctx context.Context, root string) error {
 	}
 	_, _, err := v.runner.Run(ctx, "", nil, "ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyPath, "-C", "pibox-managed")
 	if err != nil {
-		return fmt.Errorf("generazione chiave SSH gestita da pibox: %w", err)
+		return fmt.Errorf("generazione chiave SSH gestita da pix: %w", err)
 	}
 	return nil
 }
