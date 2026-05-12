@@ -193,11 +193,12 @@ func (v VM) sshForState(root string, state VMState) *SSH {
 		host = "127.0.0.1"
 	}
 	return &SSH{
-		runner:        v.runner,
-		host:          host,
-		port:          state.SSHPort,
-		keyPath:       filepath.Join(root, "vm", "default", "ssh", "id_ed25519"),
-		knownHostPath: filepath.Join(root, "vm", "default", "ssh", "known_hosts"),
+		runner:            v.runner,
+		host:              host,
+		port:              state.SSHPort,
+		keyPath:           filepath.Join(root, "vm", "default", "ssh", "id_ed25519"),
+		knownHostPath:     filepath.Join(root, "vm", "default", "ssh", "known_hosts"),
+		ignoreHostKeyScan: state.Backend == "apple-virtualization",
 	}
 }
 
@@ -502,11 +503,12 @@ func isWSL() bool {
 }
 
 type SSH struct {
-	runner        commandRunner
-	host          string
-	port          int
-	keyPath       string
-	knownHostPath string
+	runner            commandRunner
+	host              string
+	port              int
+	keyPath           string
+	knownHostPath     string
+	ignoreHostKeyScan bool
 }
 
 func (s *SSH) Run(ctx context.Context, dir, script string) error {
@@ -543,6 +545,12 @@ func (s *SSH) targetHost() string {
 }
 
 func (s *SSH) GitSSHCommand() string {
+	knownHosts := shellQuote(s.knownHostPath)
+	strictHostKeyChecking := "accept-new"
+	if s.ignoreHostKeyScan {
+		knownHosts = "/dev/null"
+		strictHostKeyChecking = "no"
+	}
 	return strings.Join([]string{
 		"ssh",
 		"-i", shellQuote(s.keyPath),
@@ -551,13 +559,20 @@ func (s *SSH) GitSSHCommand() string {
 		"-o", "ForwardAgent=no",
 		"-o", "PasswordAuthentication=no",
 		"-o", "KbdInteractiveAuthentication=no",
-		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "UserKnownHostsFile=" + shellQuote(s.knownHostPath),
+		"-o", "StrictHostKeyChecking=" + strictHostKeyChecking,
+		"-o", "UserKnownHostsFile=" + knownHosts,
 	}, " ")
 }
 
+func (s *SSH) hostKeyArgs() []string {
+	if s.ignoreHostKeyScan {
+		return []string{"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"}
+	}
+	return []string{"-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=" + s.knownHostPath}
+}
+
 func (s *SSH) args(script string) []string {
-	return []string{
+	args := []string{
 		"-p", strconv.Itoa(s.port),
 		"-i", s.keyPath,
 		"-o", "IdentitiesOnly=yes",
@@ -565,11 +580,13 @@ func (s *SSH) args(script string) []string {
 		"-o", "ForwardAgent=no",
 		"-o", "PasswordAuthentication=no",
 		"-o", "KbdInteractiveAuthentication=no",
-		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "UserKnownHostsFile=" + s.knownHostPath,
-		"root@" + s.targetHost(),
-		"sh -lc " + shellQuote(script),
 	}
+	args = append(args, s.hostKeyArgs()...)
+	args = append(args,
+		"root@"+s.targetHost(),
+		"sh -lc "+shellQuote(script),
+	)
+	return args
 }
 
 func (s *SSH) interactiveArgs(script string) []string {
