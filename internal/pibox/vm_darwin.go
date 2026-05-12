@@ -91,7 +91,7 @@ func (v VM) ensureAppleVirtualization(ctx context.Context, root, statePath strin
 		return err
 	}
 	ssh := v.sshForState(root, state)
-	return waitForSSH(ctx, ssh, 180*time.Second)
+	return waitForSSH(ctx, ssh, 10*time.Minute)
 }
 
 func (a *App) runDarwinVMHelper(ctx context.Context, args []string) error {
