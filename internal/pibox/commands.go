@@ -245,7 +245,7 @@ func (a *App) syncFromVM(ctx context.Context) error {
 			fmt.Fprintf(a.out, "  %s\n", line)
 		}
 	}
-	_, _, err = r.Run(ctx, root, nil, "git", "merge", "FETCH_HEAD")
+	_, _, err = r.Run(ctx, root, nil, "git", "merge", "--no-edit", "FETCH_HEAD")
 	if err != nil {
 		return err
 	}
