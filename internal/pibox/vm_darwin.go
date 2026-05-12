@@ -27,6 +27,9 @@ func (v VM) ensureAppleVirtualization(ctx context.Context, root, statePath strin
 	if state.Backend != "apple-virtualization" {
 		return nil
 	}
+	if state.SSHHost == "127.0.0.1" || state.SSHHost == "localhost" {
+		state.SSHHost = ""
+	}
 	if runtime.GOARCH != "arm64" {
 		return userError("Il backend macOS di pix supporta per ora solo Apple Silicon (darwin/arm64).")
 	}
