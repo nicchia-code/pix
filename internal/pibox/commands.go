@@ -205,7 +205,25 @@ func (a *App) syncFromVM(ctx context.Context) error {
 	if strings.TrimSpace(lsRemote) == "" {
 		return userError("Nessun risultato da importare dalla VM.\n\nPi potrebbe non aver ancora committato/pushato nel bridge Git.")
 	}
-	_, _, err = r.Run(ctx, root, nil, "git", "-c", "core.sshCommand="+ssh.GitSSHCommand(), "pull", ssh.PullURL(cfg.BridgePath), branch)
+	remoteURL := ssh.PullURL(cfg.BridgePath)
+	gitSSHCommand := "core.sshCommand=" + ssh.GitSSHCommand()
+	_, _, err = r.Run(ctx, root, nil, "git", "-c", gitSSHCommand, "fetch", remoteURL, branch)
+	if err != nil {
+		return err
+	}
+	commits, err := commandText(ctx, r, root, "git", "log", "--oneline", "--no-decorate", "HEAD..FETCH_HEAD")
+	if err != nil {
+		return err
+	}
+	if commits == "" {
+		fmt.Fprintln(a.out, "Nessun nuovo commit da importare dalla VM.")
+	} else {
+		fmt.Fprintln(a.out, "Commit importati dalla VM:")
+		for _, line := range strings.Split(commits, "\n") {
+			fmt.Fprintf(a.out, "  %s\n", line)
+		}
+	}
+	_, _, err = r.Run(ctx, root, nil, "git", "merge", "FETCH_HEAD")
 	if err != nil {
 		return err
 	}
