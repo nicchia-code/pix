@@ -38,22 +38,22 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "help", "-h", "--help":
 		return a.help(args[1:])
 	default:
-		return userError(fmt.Sprintf("Comando sconosciuto: %s\n\nEsegui:\n  pibox help", args[0]))
+		return userError(fmt.Sprintf("Comando sconosciuto: %s\n\nEsegui:\n  pix help", args[0]))
 	}
 }
 
 func (a *App) usage() error {
-	fmt.Fprintln(a.out, `pibox - run Pi inside a persistent isolated Linux VM
+	fmt.Fprintln(a.out, `pix - run Pi inside a persistent isolated Linux VM
 
 Usage:
-  pibox init
-  pibox init repo
-  pibox sync --from-host [--force]
-  pibox run [-- <pi args...>]
-  pibox resume [-- <pi args...>]
-  pibox sync
-  pibox vm reset --yes
-  pibox image update`)
+  pix init
+  pix init repo
+  pix sync --from-host [--force]
+  pix run [-- <pi args...>]
+  pix resume [-- <pi args...>]
+  pix sync
+  pix vm reset --yes
+  pix image update`)
 	return nil
 }
 
@@ -64,38 +64,38 @@ func (a *App) help(args []string) error {
 	switch args[0] {
 	case "init":
 		fmt.Fprintln(a.out, `Usage:
-  pibox init
-  pibox init repo
+  pix init
+  pix init repo
 
-init creates or verifies pibox host state and managed SSH keys.
+init creates or verifies pix host state and managed SSH keys.
 init repo registers the current Git repo in .git/pibox/config.json.`)
 	case "sync":
 		fmt.Fprintln(a.out, `Usage:
-  pibox sync
-  pibox sync --from-host [--force]
+  pix sync
+  pix sync --from-host [--force]
 
-pibox sync imports committed Pi results from the VM bridge Git repo into the host repo.
-pibox sync --from-host copies tracked files from the clean host Git HEAD into the VM worktree.
+pix sync imports committed Pi results from the VM bridge Git repo into the host repo.
+pix sync --from-host copies tracked files from the clean host Git HEAD into the VM worktree.
 If the current repo is not registered yet, sync --from-host registers it automatically.
 The --from-host direction overwrites the VM-side copy of the current repo.`)
 	case "run":
 		fmt.Fprintln(a.out, `Usage:
-  pibox run [-- <pi args...>]
+  pix run [-- <pi args...>]
 
 Runs Pi as root inside the VM worktree for the current registered repo.`)
 	case "resume":
 		fmt.Fprintln(a.out, `Usage:
-  pibox resume [-- <pi args...>]
+  pix resume [-- <pi args...>]
 
 Runs Pi with --resume as root inside the VM worktree for the current registered repo.`)
 	case "vm":
 		fmt.Fprintln(a.out, `Usage:
-  pibox vm reset --yes
+  pix vm reset --yes
 
-Destroys and recreates the global pibox VM. The host repo is not touched.`)
+Destroys and recreates the global pix VM. The host repo is not touched.`)
 	case "image":
 		fmt.Fprintln(a.out, `Usage:
-  pibox image update
+  pix image update
 
 Downloads a new headless Linux LTS base image for future VM resets.`)
 	default:

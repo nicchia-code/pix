@@ -12,7 +12,7 @@ func (a *App) runInit(ctx context.Context, args []string) error {
 		return a.runInitRepo(ctx, args[1:])
 	}
 	if len(args) != 0 {
-		return userError("Uso: pibox init oppure pibox init repo")
+		return userError("Uso: pix init oppure pix init repo")
 	}
 	r := osRunner{}
 	vm := newVM(r)
@@ -27,14 +27,14 @@ func (a *App) runInit(ctx context.Context, args []string) error {
 	if err := syncLocalPiCustomizations(ctx, ssh); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "Stato pibox inizializzato in %s\n", root)
+	fmt.Fprintf(a.out, "Stato pix inizializzato in %s\n", root)
 	fmt.Fprintf(a.out, "Backend: %s, immagine: %s\n", recommendedBackend(), imageName())
 	return nil
 }
 
 func (a *App) runInitRepo(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return userError("Uso: pibox init repo")
+		return userError("Uso: pix init repo")
 	}
 	r := osRunner{}
 	root, err := gitRoot(ctx, r, ".")
@@ -86,11 +86,11 @@ func (a *App) runSync(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return userError("Uso: pibox sync oppure pibox sync --from-host [--force]")
+		return userError("Uso: pix sync oppure pix sync --from-host [--force]")
 	}
 	if !*fromHost {
 		if *force {
-			return userError("Uso: pibox sync oppure pibox sync --from-host [--force]")
+			return userError("Uso: pix sync oppure pix sync --from-host [--force]")
 		}
 		return a.syncFromVM(ctx)
 	}
@@ -123,7 +123,7 @@ func (a *App) runSync(ctx context.Context, args []string) error {
 			return err
 		}
 		if dirty {
-			return userError(fmt.Sprintf("Questo comando sovrascriverà la copia del repo dentro la VM.\n\nEventuali modifiche presenti in:\n  %s\n\nandranno perse se non sono già state portate fuori.\n\nUsa:\n  pibox sync --from-host --force\n\nper continuare.", cfg.WorktreePath))
+			return userError(fmt.Sprintf("Questo comando sovrascriverà la copia del repo dentro la VM.\n\nEventuali modifiche presenti in:\n  %s\n\nandranno perse se non sono già state portate fuori.\n\nUsa:\n  pix sync --from-host --force\n\nper continuare.", cfg.WorktreePath))
 		}
 	}
 	if err := syncGitRepoToVM(ctx, r, root, ssh, cfg); err != nil {
@@ -215,7 +215,7 @@ func (a *App) syncFromVM(ctx context.Context) error {
 
 func (a *App) runVM(ctx context.Context, args []string) error {
 	if len(args) == 0 || args[0] != "reset" {
-		return userError("Uso: pibox vm reset --yes")
+		return userError("Uso: pix vm reset --yes")
 	}
 	fs := newFlagSet("vm reset", a.err)
 	yes := fs.Bool("yes", false, "")
@@ -223,7 +223,7 @@ func (a *App) runVM(ctx context.Context, args []string) error {
 		return err
 	}
 	if !*yes {
-		return userError("ATTENZIONE: questo eliminerà tutta la VM pibox.\n\nVerranno eliminati:\n- toolchain installate\n- cache\n- SDK\n- tutti i worktree dentro la VM\n- tutti i bridge.git dentro la VM\n- configurazioni modificate dentro il guest\n\nNon verranno toccati:\n- repo host\n- file host\n- .env host\n- chiavi SSH host\n\nPer continuare:\n  pibox vm reset --yes")
+		return userError("ATTENZIONE: questo eliminerà tutta la VM pix.\n\nVerranno eliminati:\n- toolchain installate\n- cache\n- SDK\n- tutti i worktree dentro la VM\n- tutti i bridge.git dentro la VM\n- configurazioni modificate dentro il guest\n\nNon verranno toccati:\n- repo host\n- file host\n- .env host\n- chiavi SSH host\n\nPer continuare:\n  pix vm reset --yes")
 	}
 	root, err := stateHome()
 	if err != nil {
@@ -240,13 +240,13 @@ func (a *App) runVM(ctx context.Context, args []string) error {
 	if _, err := vm.Init(ctx); err != nil {
 		return err
 	}
-	fmt.Fprintln(a.out, "VM pibox resettata.")
+	fmt.Fprintln(a.out, "VM pix resettata.")
 	return nil
 }
 
 func (a *App) runImage(ctx context.Context, args []string) error {
 	if len(args) != 1 || args[0] != "update" {
-		return userError("Uso: pibox image update")
+		return userError("Uso: pix image update")
 	}
 	path, err := downloadBaseImage(ctx)
 	if err != nil {
@@ -334,8 +334,8 @@ set -eu
 rm -rf %[1]s
 git clone --branch %[3]s %[2]s %[1]s >/dev/null
 cd %[1]s
-git config user.name "pibox"
-git config user.email "pibox@localhost"
+git config user.name "pix"
+git config user.email "pix@localhost"
 git remote set-url origin %[2]s
 `, shellQuote(cfg.WorktreePath), shellQuote(cfg.BridgePath), shellQuote(resultBranch))
 	return ssh.Run(ctx, "", script)

@@ -70,17 +70,17 @@ func readRepoConfig(gitDir string) (RepoConfig, error) {
 	path := repoConfigPath(gitDir)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return RepoConfig{}, userError("Questo repo non è registrato con pibox.\n\nEsegui:\n  pibox init repo")
+		return RepoConfig{}, userError("Questo repo non è registrato con pix.\n\nEsegui:\n  pix init repo")
 	}
 	if err != nil {
 		return RepoConfig{}, fmt.Errorf("lettura %s: %w", path, err)
 	}
 	var cfg RepoConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return RepoConfig{}, fmt.Errorf("config repo pibox non valida %s: %w", path, err)
+		return RepoConfig{}, fmt.Errorf("config repo pix non valida %s: %w", path, err)
 	}
 	if cfg.SchemaVersion != 1 || cfg.RepoID == "" || cfg.WorktreePath == "" || cfg.BridgePath == "" {
-		return RepoConfig{}, userError("Config repo pibox incompleta o non supportata.")
+		return RepoConfig{}, userError("Config repo pix incompleta o non supportata.")
 	}
 	return cfg, nil
 }
