@@ -127,11 +127,14 @@ func (a *App) runPi(ctx context.Context, args []string) error {
 	piArgs := shellQuoteAll(fs.Args())
 	script := fmt.Sprintf(`
 set -eu
-export PATH="/root/.local/bin:/root/.pi/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH="/root/.local/share/pi-node/current/bin:/root/.local/bin:/root/.pi/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 if ! command -v pi >/dev/null 2>&1; then
   curl -fsSL https://pi.dev/install.sh | sh
+  ln -sf /root/.local/share/pi-node/current/bin/pi /usr/local/bin/pi || true
+  export PATH="/root/.local/share/pi-node/current/bin:/root/.local/bin:/root/.pi/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 fi
 PI_BIN="$(command -v pi || true)"
+if [ -z "$PI_BIN" ] && [ -x /root/.local/share/pi-node/current/bin/pi ]; then PI_BIN=/root/.local/share/pi-node/current/bin/pi; fi
 if [ -z "$PI_BIN" ] && [ -x /root/.local/bin/pi ]; then PI_BIN=/root/.local/bin/pi; fi
 if [ -z "$PI_BIN" ] && [ -x /root/.pi/bin/pi ]; then PI_BIN=/root/.pi/bin/pi; fi
 if [ -z "$PI_BIN" ]; then

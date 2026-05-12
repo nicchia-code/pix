@@ -225,6 +225,7 @@ packages:
   - openssh-server
   - tar
 runcmd:
+  - printf '\nexport PATH="/root/.local/share/pi-node/current/bin:/root/.local/bin:/root/.pi/bin:$PATH"\n' >/etc/profile.d/pibox-pi.sh
   - mkdir -p /var/lib/pibox/repos
   - sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
   - sed -i 's/^#\?KbdInteractiveAuthentication .*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config
@@ -233,6 +234,7 @@ runcmd:
   - sed -i 's/^#\?AllowTcpForwarding .*/AllowTcpForwarding no/' /etc/ssh/sshd_config
   - systemctl restart ssh || systemctl restart sshd || true
   - curl -fsSL https://pi.dev/install.sh | sh
+  - ln -sf /root/.local/share/pi-node/current/bin/pi /usr/local/bin/pi || true
 `, strings.TrimSpace(string(pubKey)))
 	if err := os.WriteFile(filepath.Join(dir, "user-data"), []byte(userData), 0o600); err != nil {
 		return err
