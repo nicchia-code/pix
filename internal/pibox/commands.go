@@ -149,6 +149,28 @@ func (a *App) runResume(ctx context.Context, args []string) error {
 	return a.runPiArgs(ctx, append([]string{"--resume"}, fs.Args()...))
 }
 
+func (a *App) runSSH(ctx context.Context, args []string) error {
+	fs := newFlagSet("ssh", a.err)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return userError("Uso: pix ssh")
+	}
+	r := osRunner{}
+	_, cfg, err := loadCurrentRepo(ctx, r)
+	if err != nil {
+		return err
+	}
+	vm := newVM(r)
+	ssh, err := vm.ensureReady(ctx)
+	if err != nil {
+		return err
+	}
+	script := fmt.Sprintf("cd %s && exec ${SHELL:-/bin/bash} -l", shellQuote(cfg.WorktreePath))
+	return ssh.Interactive(ctx, "", a.in, a.out, a.err, script)
+}
+
 func (a *App) runPiArgs(ctx context.Context, args []string) error {
 	r := osRunner{}
 	_, cfg, err := loadCurrentRepo(ctx, r)
