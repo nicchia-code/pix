@@ -8,12 +8,13 @@ import (
 )
 
 type App struct {
+	in  io.Reader
 	out io.Writer
 	err io.Writer
 }
 
-func NewApp(out, err io.Writer) *App {
-	return &App{out: out, err: err}
+func NewApp(in io.Reader, out, err io.Writer) *App {
+	return &App{in: in, out: out, err: err}
 }
 
 func (a *App) Run(ctx context.Context, args []string) error {

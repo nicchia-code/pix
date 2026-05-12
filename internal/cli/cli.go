@@ -9,8 +9,8 @@ import (
 	"pibox/internal/pibox"
 )
 
-func Main(args []string, stdout, stderr io.Writer) int {
-	app := pibox.NewApp(stdout, stderr)
+func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	app := pibox.NewApp(stdin, stdout, stderr)
 	if err := app.Run(context.Background(), args); err != nil {
 		var exitErr pibox.ExitError
 		if errors.As(err, &exitErr) {

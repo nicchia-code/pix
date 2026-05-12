@@ -1008,6 +1008,7 @@ Non implementare nella v1:
 - Nome CLI: `pibox`.
 - Linguaggio implementazione: Go.
 - Distro base v1: Ubuntu LTS server/cloud image headless, senza desktop.
+- Disco VM v1: `qcow2` dinamico/sparse con dimensione virtuale predefinita `40G`.
 - Branch bridge ufficiale: `pi-result`.
 - `sync --from-host` richiede working tree host pulito.
 - Pi viene installato al provisioning della VM con:

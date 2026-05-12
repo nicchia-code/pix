@@ -8,7 +8,7 @@ import (
 
 func TestHelp(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Main([]string{"help"}, &stdout, &stderr)
+	code := Main([]string{"help"}, strings.NewReader(""), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
 	}
@@ -19,7 +19,7 @@ func TestHelp(t *testing.T) {
 
 func TestHelpSubcommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Main([]string{"help", "sync"}, &stdout, &stderr)
+	code := Main([]string{"help", "sync"}, strings.NewReader(""), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
 	}

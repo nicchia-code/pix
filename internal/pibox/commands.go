@@ -125,8 +125,23 @@ func (a *App) runPi(ctx context.Context, args []string) error {
 		return err
 	}
 	piArgs := shellQuoteAll(fs.Args())
-	script := fmt.Sprintf("cd %s && exec pi %s", shellQuote(cfg.WorktreePath), piArgs)
-	return ssh.Run(ctx, "", script)
+	script := fmt.Sprintf(`
+set -eu
+export PATH="/root/.local/bin:/root/.pi/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+if ! command -v pi >/dev/null 2>&1; then
+  curl -fsSL https://pi.dev/install.sh | sh
+fi
+PI_BIN="$(command -v pi || true)"
+if [ -z "$PI_BIN" ] && [ -x /root/.local/bin/pi ]; then PI_BIN=/root/.local/bin/pi; fi
+if [ -z "$PI_BIN" ] && [ -x /root/.pi/bin/pi ]; then PI_BIN=/root/.pi/bin/pi; fi
+if [ -z "$PI_BIN" ]; then
+  echo "Pi non trovato dopo l'installazione." >&2
+  exit 127
+fi
+cd %s
+exec "$PI_BIN" %s
+`, shellQuote(cfg.WorktreePath), piArgs)
+	return ssh.Interactive(ctx, "", a.in, a.out, a.err, script)
 }
 
 func (a *App) runPull(ctx context.Context, args []string) error {

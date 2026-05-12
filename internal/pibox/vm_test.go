@@ -16,3 +16,11 @@ func TestSSHArgsPassSingleRemoteCommand(t *testing.T) {
 		t.Fatalf("remote command is not shell-quoted: %q", last)
 	}
 }
+
+func TestSSHInteractiveArgsRequestTTY(t *testing.T) {
+	ssh := &SSH{port: 1234, keyPath: "/tmp/key", knownHostPath: "/tmp/known_hosts"}
+	args := ssh.interactiveArgs("pi")
+	if args[0] != "-tt" {
+		t.Fatalf("first interactive arg = %q, want -tt", args[0])
+	}
+}

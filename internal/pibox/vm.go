@@ -25,8 +25,11 @@ type VMState struct {
 	PID       int    `json:"pid,omitempty"`
 	BaseImage string `json:"base_image,omitempty"`
 	Disk      string `json:"disk,omitempty"`
+	DiskSize  string `json:"disk_size,omitempty"`
 	Seed      string `json:"seed,omitempty"`
 }
+
+const defaultDiskSize = "40G"
 
 type VM struct {
 	runner commandRunner
@@ -51,6 +54,7 @@ func (v VM) Init(ctx context.Context) (string, error) {
 			Image:     imageName(),
 			BaseImage: filepath.Join(root, "images", baseImageFile()),
 			Disk:      filepath.Join(root, "vm", "default", "disk.qcow2"),
+			DiskSize:  defaultDiskSize,
 			Seed:      filepath.Join(root, "vm", "default", "seed.iso"),
 		}
 		if err := writeVMState(statePath, state); err != nil {
@@ -75,14 +79,9 @@ func (v VM) ensureReady(ctx context.Context) (*SSH, error) {
 		return nil, err
 	}
 	if state.SSHPort == 0 {
-		return nil, userError("Backend VM non configurato.\n\nSu Linux installa qemu-img, qemu-system e cloud-localds, poi esegui:\n  pibox image update\n  pibox init")
+		return nil, userError("Backend VM non configurato.\n\nEsegui:\n  pibox init")
 	}
-	ssh := &SSH{
-		runner:        v.runner,
-		port:          state.SSHPort,
-		keyPath:       filepath.Join(root, "vm", "default", "ssh", "id_ed25519"),
-		knownHostPath: filepath.Join(root, "vm", "default", "ssh", "known_hosts"),
-	}
+	ssh := v.sshForState(root, state)
 	if err := ssh.Run(ctx, "", "true"); err != nil {
 		return nil, fmt.Errorf("SSH VM non raggiungibile su 127.0.0.1:%d: %w", state.SSHPort, err)
 	}
@@ -98,8 +97,22 @@ func (v VM) ensureQEMU(ctx context.Context, root, statePath string) error {
 	if state.Backend != "qemu" {
 		return nil
 	}
-	if state.SSHPort != 0 && processAlive(state.PID) {
-		return nil
+	pidfile := filepath.Join(root, "vm", "default", "qemu.pid")
+	if pid := readPID(pidfile); pid > 0 && state.PID == 0 {
+		state.PID = pid
+		_ = writeVMState(statePath, state)
+	}
+	if state.SSHPort != 0 {
+		ssh := v.sshForState(root, state)
+		if err := ssh.Run(ctx, "", "true"); err == nil {
+			return nil
+		}
+		if processAlive(state.PID) {
+			return waitForSSH(ctx, ssh, 90*time.Second)
+		}
+	}
+	if state.SSHPort == 0 && processAlive(state.PID) {
+		return userError("La VM pibox sembra già in esecuzione, ma lo stato non contiene la porta SSH.\n\nNon avvio una seconda VM. Esegui `pibox vm reset --yes` se vuoi ricrearla.")
 	}
 	if err := requireTool("qemu-img"); err != nil {
 		return err
@@ -116,7 +129,7 @@ func (v VM) ensureQEMU(ctx context.Context, root, statePath string) error {
 		state.BaseImage = path
 	}
 	if _, err := os.Stat(state.Disk); os.IsNotExist(err) {
-		_, _, err := v.runner.Run(ctx, "", nil, "qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", state.BaseImage, state.Disk)
+		_, _, err := v.runner.Run(ctx, "", nil, "qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", state.BaseImage, state.Disk, state.DiskSize)
 		if err != nil {
 			return fmt.Errorf("creazione disco VM: %w", err)
 		}
@@ -128,7 +141,6 @@ func (v VM) ensureQEMU(ctx context.Context, root, statePath string) error {
 	if err != nil {
 		return err
 	}
-	pidfile := filepath.Join(root, "vm", "default", "qemu.pid")
 	args := []string{
 		"-daemonize",
 		"-pidfile", pidfile,
@@ -150,6 +162,9 @@ func (v VM) ensureQEMU(ctx context.Context, root, statePath string) error {
 	}
 	_, _, err = v.runner.Run(ctx, "", nil, qemuBin, args...)
 	if err != nil {
+		if strings.Contains(err.Error(), "Failed to get \"write\" lock") {
+			return userError("Il disco della VM pibox è già bloccato da un processo QEMU.\n\nNon avvio una seconda VM. Se la VM è bloccata o lo stato è incoerente, usa:\n  pibox vm reset --yes")
+		}
 		return fmt.Errorf("avvio QEMU: %w", err)
 	}
 	pid := readPID(pidfile)
@@ -158,20 +173,28 @@ func (v VM) ensureQEMU(ctx context.Context, root, statePath string) error {
 	if err := writeVMState(statePath, state); err != nil {
 		return err
 	}
-	ssh := &SSH{
+	ssh := v.sshForState(root, state)
+	return waitForSSH(ctx, ssh, 90*time.Second)
+}
+
+func (v VM) sshForState(root string, state VMState) *SSH {
+	return &SSH{
 		runner:        v.runner,
-		port:          port,
+		port:          state.SSHPort,
 		keyPath:       filepath.Join(root, "vm", "default", "ssh", "id_ed25519"),
 		knownHostPath: filepath.Join(root, "vm", "default", "ssh", "known_hosts"),
 	}
-	deadline := time.Now().Add(90 * time.Second)
+}
+
+func waitForSSH(ctx context.Context, ssh *SSH, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if err := ssh.Run(ctx, "", "true"); err == nil {
 			return nil
 		}
 		time.Sleep(2 * time.Second)
 	}
-	return userError("VM avviata, ma SSH non è diventato raggiungibile entro 90 secondi.")
+	return userError(fmt.Sprintf("VM avviata, ma SSH non è diventato raggiungibile entro %s.", timeout))
 }
 
 func (v VM) writeSeed(ctx context.Context, root string, state VMState) error {
@@ -423,6 +446,9 @@ func normalizeVMState(root string, state VMState) VMState {
 	if state.Disk == "" {
 		state.Disk = filepath.Join(root, "vm", "default", "disk.qcow2")
 	}
+	if state.DiskSize == "" {
+		state.DiskSize = defaultDiskSize
+	}
 	if state.Seed == "" {
 		state.Seed = filepath.Join(root, "vm", "default", "seed.iso")
 	}
@@ -488,6 +514,10 @@ func (s *SSH) RunWithInput(ctx context.Context, dir string, input []byte, script
 	return err
 }
 
+func (s *SSH) Interactive(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.Writer, script string) error {
+	return runInteractive(ctx, dir, stdin, stdout, stderr, "ssh", s.interactiveArgs(script)...)
+}
+
 func (s *SSH) PullURL(path string) string {
 	return fmt.Sprintf("ssh://root@127.0.0.1:%d%s", s.port, path)
 }
@@ -506,4 +536,10 @@ func (s *SSH) args(script string) []string {
 		"root@127.0.0.1",
 		"sh -lc " + shellQuote(script),
 	}
+}
+
+func (s *SSH) interactiveArgs(script string) []string {
+	args := []string{"-tt"}
+	args = append(args, s.args(script)...)
+	return args
 }
