@@ -14,9 +14,17 @@ func (a *App) runInit(ctx context.Context, args []string) error {
 	if len(args) != 0 {
 		return userError("Uso: pibox init oppure pibox init repo")
 	}
-	vm := newVM(osRunner{})
+	r := osRunner{}
+	vm := newVM(r)
 	root, err := vm.Init(ctx)
 	if err != nil {
+		return err
+	}
+	ssh, err := vm.ensureReady(ctx)
+	if err != nil {
+		return err
+	}
+	if err := syncLocalPiCustomizations(ctx, ssh); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.out, "Stato pibox inizializzato in %s\n", root)
@@ -37,30 +45,34 @@ func (a *App) runInitRepo(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	var cfg RepoConfig
 	if _, statErr := os.Stat(repoConfigPath(gitDirPath)); statErr == nil {
-		cfg, err := readRepoConfig(gitDirPath)
+		cfg, err = readRepoConfig(gitDirPath)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(a.out, "Repo già registrato: %s\n", cfg.RepoID)
-		return nil
 	} else if !os.IsNotExist(statErr) {
 		return statErr
+	} else {
+		repoID, err := makeRepoID(root)
+		if err != nil {
+			return err
+		}
+		cfg = NewRepoConfig(repoID)
+		if err := writeRepoConfig(gitDirPath, cfg); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.out, "Repo registrato: %s\n", cfg.RepoID)
 	}
-	repoID, err := makeRepoID(root)
-	if err != nil {
-		return err
-	}
-	cfg := NewRepoConfig(repoID)
-	if err := writeRepoConfig(gitDirPath, cfg); err != nil {
-		return err
-	}
-	fmt.Fprintf(a.out, "Repo registrato: %s\n", cfg.RepoID)
 
 	vm := newVM(r)
 	ssh, err := vm.ensureReady(ctx)
 	if err != nil {
-		fmt.Fprintln(a.err, "Metadata host creati; setup VM rinviato.")
+		fmt.Fprintln(a.err, "Setup VM rinviato.")
+		return err
+	}
+	if err := syncLocalPiCustomizations(ctx, ssh); err != nil {
 		return err
 	}
 	return ensureVMRepo(ctx, ssh, cfg)
