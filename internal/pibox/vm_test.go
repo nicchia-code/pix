@@ -24,3 +24,20 @@ func TestSSHInteractiveArgsRequestTTY(t *testing.T) {
 		t.Fatalf("first interactive arg = %q, want -tt", args[0])
 	}
 }
+
+func TestGitSSHCommandUsesManagedKeyAndKnownHosts(t *testing.T) {
+	ssh := &SSH{port: 1234, keyPath: "/tmp/key with spaces", knownHostPath: "/tmp/known hosts"}
+	cmd := ssh.GitSSHCommand()
+	for _, want := range []string{
+		"ssh",
+		"-i '/tmp/key with spaces'",
+		"IdentitiesOnly=yes",
+		"IdentityAgent=none",
+		"ForwardAgent=no",
+		"UserKnownHostsFile='/tmp/known hosts'",
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Fatalf("git ssh command %q missing %q", cmd, want)
+		}
+	}
+}

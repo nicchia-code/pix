@@ -23,7 +23,7 @@ func TestHelpSubcommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "pibox sync --from-host") {
+	if !strings.Contains(stdout.String(), "pibox sync") || !strings.Contains(stdout.String(), "pibox sync --from-host") {
 		t.Fatalf("sync help output missing usage: %s", stdout.String())
 	}
 }

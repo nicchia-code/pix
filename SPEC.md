@@ -8,10 +8,9 @@ L'obiettivo è dare all'utente un'esperienza semplice:
 
 ```bash
 pibox init
-pibox init repo
 pibox sync --from-host
 pibox run
-pibox pull
+pibox sync
 ```
 
 Pi lavora come `root` dentro la VM, può installare toolchain e modificare il sistema guest, ma non deve poter leggere o modificare direttamente il filesystem host.
@@ -394,6 +393,8 @@ pibox sync --from-host
 
 Copia lo stato del repo host dentro la VM.
 
+Se il repo corrente non è ancora registrato, lo registra automaticamente creando `.git/pibox/config.json` e i path VM necessari. `pibox init repo` resta disponibile come comando esplicito/idempotente, ma non è richiesto nel flusso normale dopo `pibox init`.
+
 ```bash
 pibox sync --from-host
 ```
@@ -424,10 +425,12 @@ Non copia:
 Implementazione consigliata:
 
 ```bash
-git archive HEAD
+git push --force <bridge.git> HEAD:pi-result
 ```
 
-oppure equivalente che esporti i tracked files dello stato Git corrente.
+poi dentro la VM ricreare il worktree con un clone/checkout dal bridge Git.
+
+Motivo: il bridge deve mantenere la stessa storia Git del repo host, così la successiva sync VM→host può essere un normale `git pull` senza storie scollegate.
 
 Nota: se si vuole includere modifiche tracked non committate, bisogna decidere una strategia esplicita. La v1 può richiedere working tree pulito, oppure esportare index/working tree con logica dedicata. Decisione consigliata per v1: richiedere working tree host pulito.
 
@@ -487,18 +490,18 @@ La VM non riceve:
 
 ### 9.4.1 Test
 
-I test reali si eseguono sull'host dopo `pibox pull`.
+I test reali si eseguono sull'host dopo `pibox sync`.
 
 La VM può essere usata da Pi per installare tool, analizzare codice, modificare file e preparare commit, ma non deve contenere gli `.env` necessari ai test reali.
 
 ---
 
-## 9.5 `pibox pull`
+## 9.5 `pibox sync`
 
 Porta le modifiche prodotte da Pi dalla VM al repo host.
 
 ```bash
-pibox pull
+pibox sync
 ```
 
 Responsabilità:
@@ -519,7 +522,7 @@ La CLI nasconde `<port>`, `<repo_id>` e `<branch>`.
 
 ### 9.5.1 Cosa NON deve fare
 
-`pibox pull` non deve:
+`pibox sync` non deve:
 
 - fare `git add` nella VM;
 - fare `git commit` nella VM;
@@ -530,7 +533,7 @@ La CLI nasconde `<port>`, `<repo_id>` e `<branch>`.
 
 Pi deve committare e pushare da solo verso `bridge.git`.
 
-Se Pi non ha committato o pushato nulla, `pibox pull` non porta modifiche.
+Se Pi non ha committato o pushato nulla, `pibox sync` non porta modifiche.
 
 ### 9.5.2 Contratto per Pi
 
@@ -561,7 +564,7 @@ oppure un branch fisso gestito dalla CLI, ad esempio:
 pi-result
 ```
 
-La scelta deve essere coerente tra `run` e `pull`.
+La scelta deve essere coerente tra `run` e `sync`.
 
 Raccomandazione v1: usare `pi-result` per evitare ambiguità con il branch host.
 
@@ -689,7 +692,7 @@ Pi non scrive mai direttamente sul repo host.
 
 Pi scrive nel worktree VM, committa e pusha nel bare repo interno alla VM.
 
-L'host importa con `pibox pull`, che esegue un `git pull` dal bare repo VM.
+L'host importa con `pibox sync`, che esegue un `git pull` dal bare repo VM.
 
 ### 11.2 Flusso host -> VM
 
@@ -719,7 +722,7 @@ git push origin pi-result
 Host:
 
 ```bash
-pibox pull
+pibox sync
 ```
 
 Concettualmente:
@@ -732,7 +735,7 @@ git pull ssh://root@127.0.0.1:<port>/var/lib/pibox/repos/<repo_id>/bridge.git pi
 
 La CLI non implementa rollback.
 
-Se il pull porta modifiche sbagliate nel repo host, l'utente usa Git normale:
+Se la sync VM→host porta modifiche sbagliate nel repo host, l'utente usa Git normale:
 
 ```bash
 git reset --hard HEAD~1
@@ -789,7 +792,7 @@ Limitazioni:
 
 ### 14.1 Tracked only
 
-`sync --from-host` importa solo file tracked da Git.
+`sync --from-host` importa lo stato Git committed/tracked del repo host mantenendo la stessa storia Git.
 
 Questo evita di copiare:
 
@@ -864,15 +867,15 @@ Se repo già registrato, verifica metadata e path VM.
 
 ### `sync --from-host`
 
-Può essere ripetuto. Sovrascrive VM secondo lo stato host.
+Può essere ripetuto. Se il repo non è registrato, lo registra automaticamente. Sovrascrive VM secondo lo stato host.
 
 ### `run`
 
 Può essere ripetuto. Avvia VM se serve.
 
-### `pull`
+### `sync`
 
-Può essere ripetuto. Delega semantica a Git.
+Senza flag importa dalla VM verso host. Può essere ripetuto. Delega semantica a Git.
 
 ### `vm reset`
 
@@ -894,7 +897,7 @@ solo come opzione esplicita.
 
 ### 17.2 Repo non registrato
 
-Se l'utente esegue `run`, `pull` o `sync` in un repo non registrato:
+Se l'utente esegue `run` o `sync` in direzione VM→host in un repo non registrato:
 
 ```text
 Questo repo non è registrato con pibox.
@@ -902,6 +905,8 @@ Questo repo non è registrato con pibox.
 Esegui:
   pibox init repo
 ```
+
+Se invece esegue `sync --from-host`, la CLI registra automaticamente il repo prima di sincronizzarlo.
 
 ### 17.3 VM worktree mancante
 
@@ -921,9 +926,9 @@ Se `bridge.git` manca:
 - tentare repair se sicuro;
 - altrimenti chiedere `sync --from-host`.
 
-### 17.5 Pull senza commit Pi
+### 17.5 Sync VM→host senza commit Pi
 
-Se `pibox pull` non trova modifiche/branch remoto:
+Se `pibox sync` non trova modifiche/branch remoto:
 
 ```text
 Nessun risultato da importare dalla VM.
@@ -945,7 +950,6 @@ pibox init
 
 ```bash
 cd ~/code/my-app
-pibox init repo
 pibox sync --from-host
 ```
 
@@ -958,7 +962,7 @@ pibox run
 ### Importare modifiche da Pi
 
 ```bash
-pibox pull
+pibox sync
 ```
 
 ### Testare
@@ -1037,9 +1041,9 @@ Queste regole non devono essere violate:
 
 7. Pi pusha solo verso il bridge Git interno alla VM.
 
-8. pibox pull esegue solo git pull dal bridge Git VM verso host.
+8. pibox sync senza flag esegue solo git pull dal bridge Git VM verso host.
 
-9. pibox sync --from-host è distruttivo lato VM e copia solo tracked files.
+9. pibox sync --from-host è distruttivo lato VM e mantiene la storia Git host nel bridge.
 
 10. pibox vm reset distrugge e ricrea tutta la VM, con avviso esplicito.
 

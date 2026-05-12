@@ -524,6 +524,20 @@ func (s *SSH) PullURL(path string) string {
 	return fmt.Sprintf("ssh://root@127.0.0.1:%d%s", s.port, path)
 }
 
+func (s *SSH) GitSSHCommand() string {
+	return strings.Join([]string{
+		"ssh",
+		"-i", shellQuote(s.keyPath),
+		"-o", "IdentitiesOnly=yes",
+		"-o", "IdentityAgent=none",
+		"-o", "ForwardAgent=no",
+		"-o", "PasswordAuthentication=no",
+		"-o", "KbdInteractiveAuthentication=no",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "UserKnownHostsFile=" + shellQuote(s.knownHostPath),
+	}, " ")
+}
+
 func (s *SSH) args(script string) []string {
 	return []string{
 		"-p", strconv.Itoa(s.port),

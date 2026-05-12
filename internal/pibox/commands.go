@@ -73,20 +73,36 @@ func (a *App) runSync(ctx context.Context, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if fs.NArg() != 0 || !*fromHost {
-		return userError("Uso: pibox sync --from-host [--force]")
+	if fs.NArg() != 0 {
+		return userError("Uso: pibox sync oppure pibox sync --from-host [--force]")
+	}
+	if !*fromHost {
+		if *force {
+			return userError("Uso: pibox sync oppure pibox sync --from-host [--force]")
+		}
+		return a.syncFromVM(ctx)
 	}
 	r := osRunner{}
-	root, cfg, err := loadCurrentRepo(ctx, r)
+	root, err := gitRoot(ctx, r, ".")
 	if err != nil {
 		return err
 	}
 	if err := requireCleanWorktree(ctx, r, root); err != nil {
 		return err
 	}
+	cfg, initialized, err := loadOrInitRepoConfig(ctx, r, root)
+	if err != nil {
+		return err
+	}
+	if initialized {
+		fmt.Fprintf(a.out, "Repo registrato automaticamente: %s\n", cfg.RepoID)
+	}
 	vm := newVM(r)
 	ssh, err := vm.ensureReady(ctx)
 	if err != nil {
+		return err
+	}
+	if err := ensureVMRepo(ctx, ssh, cfg); err != nil {
 		return err
 	}
 	if !*force {
@@ -98,11 +114,7 @@ func (a *App) runSync(ctx context.Context, args []string) error {
 			return userError(fmt.Sprintf("Questo comando sovrascriverà la copia del repo dentro la VM.\n\nEventuali modifiche presenti in:\n  %s\n\nandranno perse se non sono già state portate fuori.\n\nUsa:\n  pibox sync --from-host --force\n\nper continuare.", cfg.WorktreePath))
 		}
 	}
-	archive, err := gitArchive(ctx, r, root)
-	if err != nil {
-		return err
-	}
-	if err := syncArchiveToVM(ctx, ssh, cfg, archive); err != nil {
+	if err := syncGitRepoToVM(ctx, r, root, ssh, cfg); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.out, "Repo sincronizzato nella VM: %s\n", cfg.WorktreePath)
@@ -150,10 +162,7 @@ exec "$PI_BIN" %s
 	return ssh.Interactive(ctx, "", a.in, a.out, a.err, script)
 }
 
-func (a *App) runPull(ctx context.Context, args []string) error {
-	if len(args) != 0 {
-		return userError("Uso: pibox pull")
-	}
+func (a *App) syncFromVM(ctx context.Context) error {
 	r := osRunner{}
 	root, cfg, err := loadCurrentRepo(ctx, r)
 	if err != nil {
@@ -172,8 +181,12 @@ func (a *App) runPull(ctx context.Context, args []string) error {
 	if strings.TrimSpace(lsRemote) == "" {
 		return userError("Nessun risultato da importare dalla VM.\n\nPi potrebbe non aver ancora committato/pushato nel bridge Git.")
 	}
-	_, _, err = r.Run(ctx, root, nil, "git", "pull", ssh.PullURL(cfg.BridgePath), branch)
-	return err
+	_, _, err = r.Run(ctx, root, nil, "git", "-c", "core.sshCommand="+ssh.GitSSHCommand(), "pull", ssh.PullURL(cfg.BridgePath), branch)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(a.out, "Repo sincronizzato dalla VM.")
+	return nil
 }
 
 func (a *App) runVM(ctx context.Context, args []string) error {
@@ -220,19 +233,57 @@ func (a *App) runImage(ctx context.Context, args []string) error {
 }
 
 func loadCurrentRepo(ctx context.Context, r commandRunner) (string, RepoConfig, error) {
+	root, cfg, _, err := loadCurrentRepoWithMode(ctx, r, false)
+	return root, cfg, err
+}
+
+func loadOrInitCurrentRepo(ctx context.Context, r commandRunner) (string, RepoConfig, bool, error) {
+	return loadCurrentRepoWithMode(ctx, r, true)
+}
+
+func loadOrInitRepoConfig(ctx context.Context, r commandRunner, root string) (RepoConfig, bool, error) {
+	gitDirPath, err := gitDir(ctx, r, root)
+	if err != nil {
+		return RepoConfig{}, false, err
+	}
+	if _, statErr := os.Stat(repoConfigPath(gitDirPath)); statErr == nil {
+		cfg, err := readRepoConfig(gitDirPath)
+		return cfg, false, err
+	} else if !os.IsNotExist(statErr) {
+		return RepoConfig{}, false, statErr
+	}
+	repoID, err := makeRepoID(root)
+	if err != nil {
+		return RepoConfig{}, false, err
+	}
+	cfg := NewRepoConfig(repoID)
+	if err := writeRepoConfig(gitDirPath, cfg); err != nil {
+		return RepoConfig{}, false, err
+	}
+	return cfg, true, nil
+}
+
+func loadCurrentRepoWithMode(ctx context.Context, r commandRunner, autoInit bool) (string, RepoConfig, bool, error) {
 	root, err := gitRoot(ctx, r, ".")
 	if err != nil {
-		return "", RepoConfig{}, err
+		return "", RepoConfig{}, false, err
 	}
 	gitDirPath, err := gitDir(ctx, r, root)
 	if err != nil {
-		return "", RepoConfig{}, err
+		return "", RepoConfig{}, false, err
 	}
-	cfg, err := readRepoConfig(gitDirPath)
-	if err != nil {
-		return "", RepoConfig{}, err
+	if _, statErr := os.Stat(repoConfigPath(gitDirPath)); statErr == nil {
+		cfg, err := readRepoConfig(gitDirPath)
+		return root, cfg, false, err
+	} else if !os.IsNotExist(statErr) {
+		return "", RepoConfig{}, false, statErr
 	}
-	return root, cfg, nil
+	if !autoInit {
+		_, err := readRepoConfig(gitDirPath)
+		return "", RepoConfig{}, false, err
+	}
+	cfg, initialized, err := loadOrInitRepoConfig(ctx, r, root)
+	return root, cfg, initialized, err
 }
 
 func ensureVMRepo(ctx context.Context, ssh *SSH, cfg RepoConfig) error {
@@ -249,24 +300,21 @@ func vmWorktreeDirty(ctx context.Context, ssh *SSH, cfg RepoConfig) (bool, error
 	return strings.TrimSpace(out) != "", nil
 }
 
-func syncArchiveToVM(ctx context.Context, ssh *SSH, cfg RepoConfig, archive []byte) error {
+func syncGitRepoToVM(ctx context.Context, r commandRunner, root string, ssh *SSH, cfg RepoConfig) error {
+	_, _, err := r.Run(ctx, root, nil, "git", "-c", "core.sshCommand="+ssh.GitSSHCommand(), "push", "--force", ssh.PullURL(cfg.BridgePath), "HEAD:refs/heads/"+resultBranch)
+	if err != nil {
+		return err
+	}
 	script := fmt.Sprintf(`
 set -eu
 rm -rf %[1]s
-mkdir -p %[1]s %[2]s
-git init --bare %[2]s >/dev/null
-tar -xf - -C %[1]s
+git clone --branch %[3]s %[2]s %[1]s >/dev/null
 cd %[1]s
-git init -b %[3]s >/dev/null
 git config user.name "pibox"
 git config user.email "pibox@localhost"
-git remote remove origin >/dev/null 2>&1 || true
-git remote add origin %[2]s
-git add -A
-git commit --allow-empty -m "Import from host" >/dev/null
-git push -f origin %[3]s >/dev/null
+git remote set-url origin %[2]s
 `, shellQuote(cfg.WorktreePath), shellQuote(cfg.BridgePath), shellQuote(resultBranch))
-	return ssh.RunWithInput(ctx, "", archive, script)
+	return ssh.Run(ctx, "", script)
 }
 
 func shellQuoteAll(args []string) string {

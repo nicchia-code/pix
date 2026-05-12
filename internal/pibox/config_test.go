@@ -1,6 +1,7 @@
 package pibox
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,4 +43,43 @@ func TestRepoConfigRoundTrip(t *testing.T) {
 	if got != cfg {
 		t.Fatalf("config = %#v, want %#v", got, cfg)
 	}
+}
+
+func TestLoadOrInitRepoConfigCreatesMissingConfig(t *testing.T) {
+	root := t.TempDir()
+	gitDirPath := filepath.Join(root, ".git")
+	if err := os.Mkdir(gitDirPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, initialized, err := loadOrInitRepoConfig(context.Background(), gitDirRunner{}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !initialized {
+		t.Fatal("initialized = false, want true")
+	}
+	if cfg.RepoID == "" {
+		t.Fatal("repo id is empty")
+	}
+	if _, err := os.Stat(repoConfigPath(gitDirPath)); err != nil {
+		t.Fatalf("expected repo config to be written: %v", err)
+	}
+
+	again, initialized, err := loadOrInitRepoConfig(context.Background(), gitDirRunner{}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initialized {
+		t.Fatal("initialized = true on second load, want false")
+	}
+	if again != cfg {
+		t.Fatalf("config = %#v, want %#v", again, cfg)
+	}
+}
+
+type gitDirRunner struct{}
+
+func (gitDirRunner) Run(ctx context.Context, dir string, input []byte, name string, args ...string) ([]byte, []byte, error) {
+	return []byte(".git\n"), nil, nil
 }

@@ -29,8 +29,6 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.runSync(ctx, args[1:])
 	case "run":
 		return a.runPi(ctx, args[1:])
-	case "pull":
-		return a.runPull(ctx, args[1:])
 	case "vm":
 		return a.runVM(ctx, args[1:])
 	case "image":
@@ -50,7 +48,7 @@ Usage:
   pibox init repo
   pibox sync --from-host [--force]
   pibox run [-- <pi args...>]
-  pibox pull
+  pibox sync
   pibox vm reset --yes
   pibox image update`)
 	return nil
@@ -70,20 +68,18 @@ init creates or verifies pibox host state and managed SSH keys.
 init repo registers the current Git repo in .git/pibox/config.json.`)
 	case "sync":
 		fmt.Fprintln(a.out, `Usage:
+  pibox sync
   pibox sync --from-host [--force]
 
-Copies tracked files from the clean host Git HEAD into the VM worktree.
-This overwrites the VM-side copy of the current repo.`)
+pibox sync imports committed Pi results from the VM bridge Git repo into the host repo.
+pibox sync --from-host copies tracked files from the clean host Git HEAD into the VM worktree.
+If the current repo is not registered yet, sync --from-host registers it automatically.
+The --from-host direction overwrites the VM-side copy of the current repo.`)
 	case "run":
 		fmt.Fprintln(a.out, `Usage:
   pibox run [-- <pi args...>]
 
 Runs Pi as root inside the VM worktree for the current registered repo.`)
-	case "pull":
-		fmt.Fprintln(a.out, `Usage:
-  pibox pull
-
-Imports committed Pi results from the VM bridge Git repo into the host repo.`)
 	case "vm":
 		fmt.Fprintln(a.out, `Usage:
   pibox vm reset --yes
