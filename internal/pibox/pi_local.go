@@ -180,7 +180,7 @@ set -eu
 mkdir -p /root/.pi/agent
 tmp="$(mktemp)"
 cat > "$tmp"
-if [ -f /root/.pi/agent/settings.json ]; then
+if [ -f /root/.pi/agent/settings.json ] && command -v node >/dev/null 2>&1; then
   node - "$tmp" /root/.pi/agent/settings.json <<'NODE'
 const fs = require("fs");
 const incoming = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
