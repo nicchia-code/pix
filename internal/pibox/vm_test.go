@@ -41,3 +41,22 @@ func TestGitSSHCommandUsesManagedKeyAndKnownHosts(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultDiskFile(t *testing.T) {
+	if got := defaultDiskFile("apple-virtualization"); got != "disk.raw" {
+		t.Fatalf("darwin disk file = %q, want disk.raw", got)
+	}
+	if got := defaultDiskFile("qemu"); got != "disk.qcow2" {
+		t.Fatalf("qemu disk file = %q, want disk.qcow2", got)
+	}
+}
+
+func TestParseSizeBytes(t *testing.T) {
+	got, err := parseSizeBytes("40G")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 40<<30 {
+		t.Fatalf("size = %d, want %d", got, int64(40<<30))
+	}
+}

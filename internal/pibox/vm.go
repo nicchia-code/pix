@@ -21,6 +21,7 @@ import (
 type VMState struct {
 	Backend   string `json:"backend"`
 	Image     string `json:"image"`
+	SSHHost   string `json:"ssh_host,omitempty"`
 	SSHPort   int    `json:"ssh_port,omitempty"`
 	PID       int    `json:"pid,omitempty"`
 	BaseImage string `json:"base_image,omitempty"`
@@ -49,11 +50,12 @@ func (v VM) Init(ctx context.Context) (string, error) {
 	}
 	statePath := filepath.Join(root, "vm", "default", "state.json")
 	if _, err := os.Stat(statePath); errors.Is(err, os.ErrNotExist) {
+		backend := recommendedBackend()
 		state := VMState{
-			Backend:   recommendedBackend(),
+			Backend:   backend,
 			Image:     imageName(),
 			BaseImage: filepath.Join(root, "images", baseImageFile()),
-			Disk:      filepath.Join(root, "vm", "default", "disk.qcow2"),
+			Disk:      filepath.Join(root, "vm", "default", defaultDiskFile(backend)),
 			DiskSize:  defaultDiskSize,
 			Seed:      filepath.Join(root, "vm", "default", "seed.iso"),
 		}
@@ -61,8 +63,13 @@ func (v VM) Init(ctx context.Context) (string, error) {
 			return "", err
 		}
 	}
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		if err := v.ensureQEMU(ctx, root, statePath); err != nil {
+			return "", err
+		}
+	case "darwin":
+		if err := v.ensureAppleVirtualization(ctx, root, statePath); err != nil {
 			return "", err
 		}
 	}
@@ -77,6 +84,9 @@ func (v VM) ensureReady(ctx context.Context) (*SSH, error) {
 	state, err := readVMState(filepath.Join(root, "vm", "default", "state.json"))
 	if err != nil {
 		return nil, err
+	}
+	if state.SSHHost == "" {
+		state.SSHHost = "127.0.0.1"
 	}
 	if state.SSHPort == 0 {
 		return nil, userError("Backend VM non configurato.\n\nEsegui:\n  pix init")
@@ -178,8 +188,13 @@ func (v VM) ensureQEMU(ctx context.Context, root, statePath string) error {
 }
 
 func (v VM) sshForState(root string, state VMState) *SSH {
+	host := state.SSHHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
 	return &SSH{
 		runner:        v.runner,
+		host:          host,
 		port:          state.SSHPort,
 		keyPath:       filepath.Join(root, "vm", "default", "ssh", "id_ed25519"),
 		knownHostPath: filepath.Join(root, "vm", "default", "ssh", "known_hosts"),
@@ -197,15 +212,31 @@ func waitForSSH(ctx context.Context, ssh *SSH, timeout time.Duration) error {
 	return userError(fmt.Sprintf("VM avviata, ma SSH non è diventato raggiungibile entro %s.", timeout))
 }
 
+func startBackground(ctx context.Context, r commandRunner, name string, args []string, pidfile string) error {
+	quoted := append([]string{shellQuote(name)}, shellQuoteAll(args))
+	logfile := pidfile + ".log"
+	script := fmt.Sprintf("nohup %s >%s 2>&1 & echo $! > %s", strings.Join(quoted, " "), shellQuote(logfile), shellQuote(pidfile))
+	_, _, err := r.Run(ctx, "", nil, "sh", "-lc", script)
+	return err
+}
+
 func (v VM) writeSeed(ctx context.Context, root string, state VMState) error {
+	dir, err := v.writeCloudInitFiles(root)
+	if err != nil {
+		return err
+	}
+	return createCloudInitSeed(ctx, v.runner, state.Seed, dir)
+}
+
+func (v VM) writeCloudInitFiles(root string) (string, error) {
 	pubKeyPath := filepath.Join(root, "vm", "default", "ssh", "id_ed25519.pub")
 	pubKey, err := os.ReadFile(pubKeyPath)
 	if err != nil {
-		return fmt.Errorf("lettura chiave pubblica pix: %w", err)
+		return "", fmt.Errorf("lettura chiave pubblica pix: %w", err)
 	}
 	dir := filepath.Join(root, "vm", "default", "cloud-init")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
+		return "", err
 	}
 	userData := fmt.Sprintf(`#cloud-config
 disable_root: false
@@ -237,12 +268,12 @@ runcmd:
   - ln -sf /root/.local/share/pi-node/current/bin/pi /usr/local/bin/pi || true
 `, strings.TrimSpace(string(pubKey)))
 	if err := os.WriteFile(filepath.Join(dir, "user-data"), []byte(userData), 0o600); err != nil {
-		return err
+		return "", err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "meta-data"), []byte("instance-id: pibox-default\nlocal-hostname: pibox\n"), 0o600); err != nil {
-		return err
+		return "", err
 	}
-	return createCloudInitSeed(ctx, v.runner, state.Seed, dir)
+	return dir, nil
 }
 
 func imageName() string {
@@ -317,37 +348,7 @@ func requireTool(name string) error {
 }
 
 func createCloudInitSeed(ctx context.Context, r commandRunner, seedPath, dir string) error {
-	userData := filepath.Join(dir, "user-data")
-	metaData := filepath.Join(dir, "meta-data")
-	if _, err := exec.LookPath("cloud-localds"); err == nil {
-		_, _, err := r.Run(ctx, "", nil, "cloud-localds", seedPath, userData, metaData)
-		if err != nil {
-			return fmt.Errorf("creazione seed cloud-init: %w", err)
-		}
-		return nil
-	}
-	if _, err := exec.LookPath("genisoimage"); err == nil {
-		_, _, err := r.Run(ctx, "", nil, "genisoimage", "-quiet", "-output", seedPath, "-volid", "cidata", "-joliet", "-rock", "-graft-points", "user-data="+userData, "meta-data="+metaData)
-		if err != nil {
-			return fmt.Errorf("creazione seed cloud-init: %w", err)
-		}
-		return nil
-	}
-	if _, err := exec.LookPath("mkisofs"); err == nil {
-		_, _, err := r.Run(ctx, "", nil, "mkisofs", "-quiet", "-output", seedPath, "-volid", "cidata", "-joliet", "-rock", "-graft-points", "user-data="+userData, "meta-data="+metaData)
-		if err != nil {
-			return fmt.Errorf("creazione seed cloud-init: %w", err)
-		}
-		return nil
-	}
-	if _, err := exec.LookPath("xorriso"); err == nil {
-		_, _, err := r.Run(ctx, "", nil, "xorriso", "-as", "mkisofs", "-quiet", "-output", seedPath, "-volid", "cidata", "-joliet", "-rock", "-graft-points", "user-data="+userData, "meta-data="+metaData)
-		if err != nil {
-			return fmt.Errorf("creazione seed cloud-init: %w", err)
-		}
-		return nil
-	}
-	return userError("Manca un tool per creare il seed cloud-init: installa cloud-localds, genisoimage, mkisofs o xorriso.")
+	return createNoCloudISO(seedPath, filepath.Join(dir, "user-data"), filepath.Join(dir, "meta-data"))
 }
 
 func qemuSystemBinary() (string, error) {
@@ -442,11 +443,14 @@ func normalizeVMState(root string, state VMState) VMState {
 	if state.Image == "" {
 		state.Image = imageName()
 	}
+	if state.SSHHost == "" {
+		state.SSHHost = "127.0.0.1"
+	}
 	if state.BaseImage == "" {
 		state.BaseImage = filepath.Join(root, "images", baseImageFile())
 	}
 	if state.Disk == "" {
-		state.Disk = filepath.Join(root, "vm", "default", "disk.qcow2")
+		state.Disk = filepath.Join(root, "vm", "default", defaultDiskFile(state.Backend))
 	}
 	if state.DiskSize == "" {
 		state.DiskSize = defaultDiskSize
@@ -455,6 +459,13 @@ func normalizeVMState(root string, state VMState) VMState {
 		state.Seed = filepath.Join(root, "vm", "default", "seed.iso")
 	}
 	return state
+}
+
+func defaultDiskFile(backend string) string {
+	if backend == "apple-virtualization" {
+		return "disk.raw"
+	}
+	return "disk.qcow2"
 }
 
 func writeVMState(path string, state VMState) error {
@@ -493,6 +504,7 @@ func isWSL() bool {
 
 type SSH struct {
 	runner        commandRunner
+	host          string
 	port          int
 	keyPath       string
 	knownHostPath string
@@ -521,7 +533,14 @@ func (s *SSH) Interactive(ctx context.Context, dir string, stdin io.Reader, stdo
 }
 
 func (s *SSH) PullURL(path string) string {
-	return fmt.Sprintf("ssh://root@127.0.0.1:%d%s", s.port, path)
+	return fmt.Sprintf("ssh://root@%s:%d%s", s.targetHost(), s.port, path)
+}
+
+func (s *SSH) targetHost() string {
+	if s.host != "" {
+		return s.host
+	}
+	return "127.0.0.1"
 }
 
 func (s *SSH) GitSSHCommand() string {
@@ -549,7 +568,7 @@ func (s *SSH) args(script string) []string {
 		"-o", "KbdInteractiveAuthentication=no",
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "UserKnownHostsFile=" + s.knownHostPath,
-		"root@127.0.0.1",
+		"root@" + s.targetHost(),
 		"sh -lc " + shellQuote(script),
 	}
 }

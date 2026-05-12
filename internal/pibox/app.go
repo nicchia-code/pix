@@ -35,6 +35,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.runVM(ctx, args[1:])
 	case "image":
 		return a.runImage(ctx, args[1:])
+	case "__darwin-vm-helper":
+		return a.runDarwinVMHelper(ctx, args[1:])
 	case "help", "-h", "--help":
 		return a.help(args[1:])
 	default:
