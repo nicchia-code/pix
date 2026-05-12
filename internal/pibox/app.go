@@ -31,6 +31,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.runPi(ctx, args[1:])
 	case "resume":
 		return a.runResume(ctx, args[1:])
+	case "ssh":
+		return a.runSSH(ctx, args[1:])
 	case "vm":
 		return a.runVM(ctx, args[1:])
 	case "image":
@@ -53,6 +55,7 @@ Usage:
   pix sync --from-host [--force]
   pix run [-- <pi args...>]
   pix resume [-- <pi args...>]
+  pix ssh
   pix sync
   pix vm reset --yes
   pix image update`)
@@ -90,6 +93,11 @@ Runs Pi as root inside the VM worktree for the current registered repo.`)
   pix resume [-- <pi args...>]
 
 Runs Pi with --resume as root inside the VM worktree for the current registered repo.`)
+	case "ssh":
+		fmt.Fprintln(a.out, `Usage:
+  pix ssh
+
+Opens an interactive root shell inside the VM worktree for the current registered repo.`)
 	case "vm":
 		fmt.Fprintln(a.out, `Usage:
   pix vm reset --yes
