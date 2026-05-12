@@ -124,6 +124,9 @@ func (a *App) runPi(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := syncLocalPiCustomizations(ctx, ssh); err != nil {
+		return err
+	}
 	piArgs := shellQuoteAll(fs.Args())
 	script := fmt.Sprintf(`
 set -eu
