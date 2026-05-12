@@ -82,7 +82,7 @@ func (v VM) ensureAppleVirtualization(ctx context.Context, root, statePath strin
 		return err
 	}
 
-	host, err := waitForDarwinGuestIP(ctx, appleVMMAC, 120*time.Second)
+	host, err := waitForDarwinGuestIP(ctx, appleVMMAC, filepath.Join(vmDir, "apple-vz-serial.log"), 120*time.Second)
 	if err != nil {
 		return err
 	}
@@ -164,6 +164,16 @@ func runAppleVirtualizationVM(ctx context.Context, root string, state VMState) e
 	netdev.SetMACAddress(mac)
 	config.SetNetworkDevicesVirtualMachineConfiguration([]*vz.VirtioNetworkDeviceConfiguration{netdev})
 
+	serialAttachment, err := vz.NewFileSerialPortAttachment(filepath.Join(vmDir, "apple-vz-serial.log"), true)
+	if err != nil {
+		return err
+	}
+	serial, err := vz.NewVirtioConsoleDeviceSerialPortConfiguration(serialAttachment)
+	if err != nil {
+		return err
+	}
+	config.SetSerialPortsVirtualMachineConfiguration([]*vz.VirtioConsoleDeviceSerialPortConfiguration{serial})
+
 	if ok, err := config.Validate(); !ok || err != nil {
 		return fmt.Errorf("config VM macOS non valida: %w", err)
 	}
@@ -195,10 +205,13 @@ func virtioBlock(path string, readOnly bool) (*vz.VirtioBlockDeviceConfiguration
 	return vz.NewVirtioBlockDeviceConfiguration(attachment)
 }
 
-func waitForDarwinGuestIP(ctx context.Context, mac string, timeout time.Duration) (string, error) {
+func waitForDarwinGuestIP(ctx context.Context, mac, serialLog string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if ip, err := darwinGuestIP(mac); err == nil && ip != "" {
+			return ip, nil
+		}
+		if ip, err := darwinGuestIPFromSerial(serialLog); err == nil && ip != "" {
 			return ip, nil
 		}
 		select {
@@ -207,7 +220,20 @@ func waitForDarwinGuestIP(ctx context.Context, mac string, timeout time.Duration
 		case <-time.After(2 * time.Second):
 		}
 	}
-	return "", userError("VM avviata, ma non riesco a trovare l'IP assegnato dal NAT macOS.")
+	return "", userError("VM avviata, ma non riesco a trovare l'IP assegnato dal NAT macOS.\n\nControlla i log:\n  " + serialLog + "\n  /var/db/dhcpd_leases")
+}
+
+func darwinGuestIPFromSerial(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	re := regexp.MustCompile(`PIBOX_IP=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)`)
+	matches := re.FindAllStringSubmatch(string(data), -1)
+	if len(matches) == 0 {
+		return "", nil
+	}
+	return matches[len(matches)-1][1], nil
 }
 
 func darwinGuestIP(mac string) (string, error) {
