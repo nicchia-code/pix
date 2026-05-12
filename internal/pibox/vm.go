@@ -257,6 +257,8 @@ packages:
   - tar
 runcmd:
   - printf '\nexport PATH="/root/.local/share/pi-node/current/bin:/root/.local/bin:/root/.pi/bin:$PATH"\n' >/etc/profile.d/pibox-pi.sh
+  - sh -c '(for i in $(seq 1 120); do ip -4 -o addr show scope global | awk '\''{split($4,a,"/"); print "PIBOX_IP=" a[1]}'\'' | head -n1; sleep 2; done) >/dev/hvc0 2>/dev/null &' || true
+  - sh -c '(for i in $(seq 1 120); do ip -4 -o addr show scope global | awk '\''{split($4,a,"/"); print "PIBOX_IP=" a[1]}'\'' | head -n1; sleep 2; done) >/dev/console 2>/dev/null &' || true
   - mkdir -p /var/lib/pibox/repos
   - sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
   - sed -i 's/^#\?KbdInteractiveAuthentication .*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config
@@ -442,9 +444,6 @@ func normalizeVMState(root string, state VMState) VMState {
 	}
 	if state.Image == "" {
 		state.Image = imageName()
-	}
-	if state.SSHHost == "" {
-		state.SSHHost = "127.0.0.1"
 	}
 	if state.BaseImage == "" {
 		state.BaseImage = filepath.Join(root, "images", baseImageFile())
