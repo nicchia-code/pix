@@ -50,7 +50,7 @@ func writePixExtension(ctx context.Context, ssh *SSH) error {
 	const extension = `import { execFileSync } from "node:child_process";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const PIX_CONTEXT = ` + "`" + `You are running inside pix.
 
@@ -99,6 +99,12 @@ function projectName(cwd: string): string {
   return path.basename(cwd) || cwd;
 }
 
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return (n / 1000).toFixed(n < 10_000 ? 1 : 0) + "k";
+  return (n / 1_000_000).toFixed(1) + "M";
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
     return { systemPrompt: event.systemPrompt + "\n\n" + PIX_CONTEXT };
@@ -118,8 +124,69 @@ export default function (pi: ExtensionAPI) {
         render(width: number): string[] {
           const cwd = ctx.sessionManager.getCwd();
           const synced = cachedSync(cwd);
-          const status = synced ? theme.fg("success", "SYNC") : theme.fg("error", "OUT OF SYNC");
-          return [truncateToWidth(theme.fg("dim", projectName(cwd) + " ") + status, width, theme.fg("dim", "..."))];
+          const syncStatus = synced ? theme.fg("success", "SYNC") : theme.fg("error", "OUT OF SYNC");
+          const projectLine = truncateToWidth(theme.fg("dim", "  " + projectName(cwd) + "  ") + syncStatus, width, theme.fg("dim", "..."));
+
+          let totalInput = 0;
+          let totalOutput = 0;
+          let totalCacheRead = 0;
+          let totalCacheWrite = 0;
+          let totalCost = 0;
+          for (const entry of ctx.sessionManager.getEntries()) {
+            if (entry.type === "message" && entry.message.role === "assistant") {
+              const usage = entry.message.usage;
+              totalInput += usage.input;
+              totalOutput += usage.output;
+              totalCacheRead += usage.cacheRead;
+              totalCacheWrite += usage.cacheWrite;
+              totalCost += usage.cost.total;
+            }
+          }
+
+          const statsParts: string[] = [];
+          if (totalInput) statsParts.push("↑" + formatTokens(totalInput));
+          if (totalOutput) statsParts.push("↓" + formatTokens(totalOutput));
+          if (totalCacheRead) statsParts.push("R" + formatTokens(totalCacheRead));
+          if (totalCacheWrite) statsParts.push("W" + formatTokens(totalCacheWrite));
+          if (totalCost) statsParts.push("$" + totalCost.toFixed(3));
+
+          const contextUsage = ctx.getContextUsage();
+          const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+          const contextPercentValue = contextUsage?.percent ?? 0;
+          const contextDisplay = contextUsage?.percent == null ? "?/" + formatTokens(contextWindow) : contextPercentValue.toFixed(1) + "%/" + formatTokens(contextWindow);
+          if (contextWindow) {
+            statsParts.push(
+              contextPercentValue > 90
+                ? theme.fg("error", contextDisplay)
+                : contextPercentValue > 70
+                  ? theme.fg("warning", contextDisplay)
+                  : contextDisplay,
+            );
+          }
+
+          const contentWidth = Math.max(1, width - 2);
+          let statsLeft = statsParts.join(" ");
+          if (visibleWidth(statsLeft) > contentWidth) statsLeft = truncateToWidth(statsLeft, contentWidth, "...");
+
+          const branch = footerData.getGitBranch();
+          const branchStr = branch ? " (" + branch + ")" : "";
+          const rightSide = (ctx.model?.id || "no-model") + branchStr;
+          const rightWidth = visibleWidth(rightSide);
+          const leftWidth = visibleWidth(statsLeft);
+          let statsLine: string;
+          if (leftWidth + 2 + rightWidth <= contentWidth) {
+            statsLine = statsLeft + " ".repeat(contentWidth - leftWidth - rightWidth) + rightSide;
+          } else {
+            const availableRight = contentWidth - leftWidth - 2;
+            statsLine = availableRight > 0 ? statsLeft + "  " + truncateToWidth(rightSide, availableRight, "") : statsLeft;
+          }
+
+          const lines = [projectLine, theme.fg("dim", "  " + statsLine)];
+          const extensionStatuses = footerData.getExtensionStatuses();
+          if (extensionStatuses.size > 0) {
+            lines.push("  " + truncateToWidth(Array.from(extensionStatuses.values()).join(" "), contentWidth, theme.fg("dim", "...")));
+          }
+          return lines;
         },
       };
     });
