@@ -23,8 +23,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
-	case "init":
-		return a.runInit(ctx, args[1:])
+	case "install":
+		return a.runInstall(ctx, args[1:])
 	case "sync":
 		return a.runSync(ctx, args[1:])
 	case "new":
@@ -48,8 +48,7 @@ func (a *App) usage() error {
 	fmt.Fprintln(a.out, `pix - run Pi inside a persistent isolated Linux VM
 
 Usage:
-  pix init
-  pix init repo
+  pix install
   pix sync --from-host [--force]
   pix new [-- <pi args...>]
   pix resume [-- <pi args...>]
@@ -65,13 +64,11 @@ func (a *App) help(args []string) error {
 		return a.usage()
 	}
 	switch args[0] {
-	case "init":
+	case "install":
 		fmt.Fprintln(a.out, `Usage:
-  pix init
-  pix init repo
+  pix install
 
-init creates or verifies pix host state and managed SSH keys.
-init repo registers the current Git repo in .git/pix/config.json.`)
+install creates or verifies pix host state, the managed VM, and managed SSH keys.`)
 	case "sync":
 		fmt.Fprintln(a.out, `Usage:
   pix sync

@@ -110,7 +110,7 @@ func (v VM) ensureReady(ctx context.Context) (*SSH, error) {
 		state.SSHHost = "127.0.0.1"
 	}
 	if state.SSHPort == 0 {
-		return nil, userError("Backend VM non configurato.\n\nEsegui:\n  pix init")
+		return nil, userError("Backend VM non configurato.\n\nEsegui:\n  pix install")
 	}
 	ssh := v.sshForState(root, state)
 	if err := ssh.Run(ctx, "", "true"); err != nil {

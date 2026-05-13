@@ -7,12 +7,9 @@ import (
 	"strings"
 )
 
-func (a *App) runInit(ctx context.Context, args []string) error {
-	if len(args) > 0 && args[0] == "repo" {
-		return a.runInitRepo(ctx, args[1:])
-	}
+func (a *App) runInstall(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return userError("Uso: pix init oppure pix init repo")
+		return userError("Uso: pix install")
 	}
 	r := osRunner{}
 	vm := newVM(r)
@@ -30,52 +27,6 @@ func (a *App) runInit(ctx context.Context, args []string) error {
 	fmt.Fprintf(a.out, "Stato pix inizializzato in %s\n", root)
 	fmt.Fprintf(a.out, "Backend: %s, immagine: %s\n", recommendedBackend(), imageName())
 	return nil
-}
-
-func (a *App) runInitRepo(ctx context.Context, args []string) error {
-	if len(args) != 0 {
-		return userError("Uso: pix init repo")
-	}
-	r := osRunner{}
-	root, err := gitRoot(ctx, r, ".")
-	if err != nil {
-		return err
-	}
-	gitDirPath, err := gitDir(ctx, r, root)
-	if err != nil {
-		return err
-	}
-	var cfg RepoConfig
-	if _, statErr := os.Stat(repoConfigPath(gitDirPath)); statErr == nil {
-		cfg, err = readRepoConfig(gitDirPath)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(a.out, "Repo già registrato: %s\n", cfg.RepoID)
-	} else if !os.IsNotExist(statErr) {
-		return statErr
-	} else {
-		repoID, err := makeRepoID(root)
-		if err != nil {
-			return err
-		}
-		cfg = NewRepoConfig(repoID)
-		if err := writeRepoConfig(gitDirPath, cfg); err != nil {
-			return err
-		}
-		fmt.Fprintf(a.out, "Repo registrato: %s\n", cfg.RepoID)
-	}
-
-	vm := newVM(r)
-	ssh, err := vm.ensureReady(ctx)
-	if err != nil {
-		fmt.Fprintln(a.err, "Setup VM rinviato.")
-		return err
-	}
-	if err := syncLocalPiCustomizations(ctx, ssh); err != nil {
-		return err
-	}
-	return ensureVMRepo(ctx, ssh, cfg)
 }
 
 func (a *App) runSync(ctx context.Context, args []string) error {
