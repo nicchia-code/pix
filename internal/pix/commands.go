@@ -277,8 +277,16 @@ func (a *App) runVM(ctx context.Context, args []string) error {
 		return err
 	}
 	statePath := root + "/vm/default/state.json"
-	if state, err := readVMState(statePath); err == nil && state.PID > 0 {
-		_ = stopProcess(state.PID)
+	if state, err := readVMState(statePath); err == nil {
+		if state.Backend == "wsl2-appliance" {
+			distro := state.WSLDistro
+			if distro == "" {
+				distro = defaultWSLDistro
+			}
+			_ = unregisterWSLDistro(ctx, osRunner{}, distro)
+		} else if state.PID > 0 {
+			_ = stopProcess(state.PID)
+		}
 	}
 	if err := os.RemoveAll(root + "/vm/default"); err != nil {
 		return err
