@@ -1,4 +1,4 @@
-GOCACHE ?= /tmp/pibox-go-cache
+GOCACHE ?= /tmp/pix-go-cache
 GOFLAGS ?= -buildvcs=false
 
 .PHONY: build test clean

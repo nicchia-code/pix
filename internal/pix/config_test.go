@@ -1,4 +1,4 @@
-package pibox
+package pix
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-func TestEnsureStateTreeUsesPiboxHome(t *testing.T) {
+func TestEnsureStateTreeUsesPixHome(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("PIBOX_HOME", root)
+	t.Setenv("PIX_HOME", root)
 
 	got, err := ensureStateTree()
 	if err != nil {

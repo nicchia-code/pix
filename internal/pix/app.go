@@ -1,4 +1,4 @@
-package pibox
+package pix
 
 import (
 	"context"
@@ -19,7 +19,7 @@ func NewApp(in io.Reader, out, err io.Writer) *App {
 
 func (a *App) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return a.usage()
+		return a.runResume(ctx, nil)
 	}
 
 	switch args[0] {
@@ -27,16 +27,14 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.runInit(ctx, args[1:])
 	case "sync":
 		return a.runSync(ctx, args[1:])
-	case "run":
-		return a.runPi(ctx, args[1:])
+	case "new":
+		return a.runNew(ctx, args[1:])
 	case "resume":
 		return a.runResume(ctx, args[1:])
 	case "ssh":
 		return a.runSSH(ctx, args[1:])
 	case "vm":
 		return a.runVM(ctx, args[1:])
-	case "image":
-		return a.runImage(ctx, args[1:])
 	case "__darwin-vm-helper":
 		return a.runDarwinVMHelper(ctx, args[1:])
 	case "help", "-h", "--help":
@@ -53,12 +51,12 @@ Usage:
   pix init
   pix init repo
   pix sync --from-host [--force]
-  pix run [-- <pi args...>]
+  pix new [-- <pi args...>]
   pix resume [-- <pi args...>]
+  pix                 # alias for pix resume
   pix ssh
   pix sync
-  pix vm reset --yes
-  pix image update`)
+  pix vm reset --yes`)
 	return nil
 }
 
@@ -73,7 +71,7 @@ func (a *App) help(args []string) error {
   pix init repo
 
 init creates or verifies pix host state and managed SSH keys.
-init repo registers the current Git repo in .git/pibox/config.json.`)
+init repo registers the current Git repo in .git/pix/config.json.`)
 	case "sync":
 		fmt.Fprintln(a.out, `Usage:
   pix sync
@@ -83,16 +81,17 @@ pix sync imports committed Pi results from the VM bridge Git repo into the host 
 pix sync --from-host copies tracked files from the clean host Git HEAD into the VM worktree.
 If the current repo is not registered yet, sync --from-host registers it automatically.
 The --from-host direction overwrites the VM-side copy of the current repo.`)
-	case "run":
+	case "new":
 		fmt.Fprintln(a.out, `Usage:
-  pix run [-- <pi args...>]
+  pix new [-- <pi args...>]
 
-Runs Pi as root inside the VM worktree for the current registered repo.`)
+Starts a new Pi session as root inside the VM worktree for the current registered repo.`)
 	case "resume":
 		fmt.Fprintln(a.out, `Usage:
   pix resume [-- <pi args...>]
 
-Runs Pi with --resume as root inside the VM worktree for the current registered repo.`)
+Runs Pi with --resume as root inside the VM worktree for the current registered repo.
+Calling pix without arguments is equivalent to pix resume.`)
 	case "ssh":
 		fmt.Fprintln(a.out, `Usage:
   pix ssh
@@ -103,11 +102,6 @@ Opens an interactive root shell inside the VM worktree for the current registere
   pix vm reset --yes
 
 Destroys and recreates the global pix VM. The host repo is not touched.`)
-	case "image":
-		fmt.Fprintln(a.out, `Usage:
-  pix image update
-
-Downloads a new headless Linux LTS base image for future VM resets.`)
 	default:
 		return userError(fmt.Sprintf("Argomento help sconosciuto: %s", args[0]))
 	}

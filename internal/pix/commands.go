@@ -1,4 +1,4 @@
-package pibox
+package pix
 
 import (
 	"context"
@@ -133,8 +133,8 @@ func (a *App) runSync(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (a *App) runPi(ctx context.Context, args []string) error {
-	fs := newFlagSet("run", a.err)
+func (a *App) runNew(ctx context.Context, args []string) error {
+	fs := newFlagSet("new", a.err)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -214,6 +214,9 @@ func (a *App) syncFromVM(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := requireCleanWorktree(ctx, r, root); err != nil {
+		return err
+	}
 	vm := newVM(r)
 	ssh, err := vm.ensureReady(ctx)
 	if err != nil {
@@ -281,18 +284,6 @@ func (a *App) runVM(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Fprintln(a.out, "VM pix resettata.")
-	return nil
-}
-
-func (a *App) runImage(ctx context.Context, args []string) error {
-	if len(args) != 1 || args[0] != "update" {
-		return userError("Uso: pix image update")
-	}
-	path, err := downloadBaseImage(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.out, "Immagine headless LTS scaricata: %s\n", path)
 	return nil
 }
 

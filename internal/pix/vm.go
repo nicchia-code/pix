@@ -1,7 +1,10 @@
-package pibox
+package pix
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -257,10 +260,10 @@ packages:
   - openssh-server
   - tar
 runcmd:
-  - printf '\nexport PATH="/root/.local/share/pi-node/current/bin:/root/.local/bin:/root/.pi/bin:$PATH"\n' >/etc/profile.d/pibox-pi.sh
-  - sh -c '(for i in $(seq 1 120); do ip -4 -o addr show scope global | awk '\''{split($4,a,"/"); print "PIBOX_IP=" a[1]}'\'' | head -n1; sleep 2; done) >/dev/hvc0 2>/dev/null &' || true
-  - sh -c '(for i in $(seq 1 120); do ip -4 -o addr show scope global | awk '\''{split($4,a,"/"); print "PIBOX_IP=" a[1]}'\'' | head -n1; sleep 2; done) >/dev/console 2>/dev/null &' || true
-  - mkdir -p /var/lib/pibox/repos
+  - printf '\nexport PATH="/root/.local/share/pi-node/current/bin:/root/.local/bin:/root/.pi/bin:$PATH"\n' >/etc/profile.d/pix-pi.sh
+  - sh -c '(for i in $(seq 1 120); do ip -4 -o addr show scope global | awk '\''{split($4,a,"/"); print "PIX_IP=" a[1]}'\'' | head -n1; sleep 2; done) >/dev/hvc0 2>/dev/null &' || true
+  - sh -c '(for i in $(seq 1 120); do ip -4 -o addr show scope global | awk '\''{split($4,a,"/"); print "PIX_IP=" a[1]}'\'' | head -n1; sleep 2; done) >/dev/console 2>/dev/null &' || true
+  - mkdir -p /var/lib/pix/repos
   - sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
   - sed -i 's/^#\?KbdInteractiveAuthentication .*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config
   - sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
@@ -273,7 +276,7 @@ runcmd:
 	if err := os.WriteFile(filepath.Join(dir, "user-data"), []byte(userData), 0o600); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "meta-data"), []byte("instance-id: pibox-default\nlocal-hostname: pibox\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "meta-data"), []byte("instance-id: pix-default\nlocal-hostname: pix\n"), 0o600); err != nil {
 		return "", err
 	}
 	return dir, nil
@@ -312,35 +315,104 @@ func downloadBaseImage(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	expected, err := fetchExpectedImageSHA256(ctx, url, baseImageFile())
+	if err != nil {
+		return "", err
+	}
 	dst := filepath.Join(root, "images", baseImageFile())
 	tmp := dst + ".tmp"
+	if err := downloadURLToFile(ctx, url, tmp); err != nil {
+		return "", err
+	}
+	if err := verifyFileSHA256(tmp, expected); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	return dst, nil
+}
+
+func downloadURLToFile(ctx context.Context, url, dst string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("download immagine base: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download immagine base: HTTP %s", resp.Status)
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+func fetchExpectedImageSHA256(ctx context.Context, imageURL, filename string) (string, error) {
+	sumsURL := imageURL[:strings.LastIndex(imageURL, "/")+1] + "SHA256SUMS"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sumsURL, nil)
 	if err != nil {
 		return "", err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("download immagine base: %w", err)
+		return "", fmt.Errorf("download checksum immagine base: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download immagine base: HTTP %s", resp.Status)
+		return "", fmt.Errorf("download checksum immagine base: HTTP %s", resp.Status)
 	}
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close()
-		return "", err
+	expected, ok := parseSHA256SUMS(data, filename)
+	if !ok {
+		return "", fmt.Errorf("checksum immagine base non trovato in %s", sumsURL)
 	}
-	if err := out.Close(); err != nil {
-		return "", err
+	return expected, nil
+}
+
+func parseSHA256SUMS(data []byte, filename string) (string, bool) {
+	for _, line := range bytes.Split(data, []byte{'\n'}) {
+		fields := bytes.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := strings.TrimPrefix(string(fields[1]), "*")
+		if filepath.Base(name) == filename && len(fields[0]) == sha256.Size*2 {
+			return string(fields[0]), true
+		}
 	}
-	if err := os.Rename(tmp, dst); err != nil {
-		return "", err
+	return "", false
+}
+
+func verifyFileSHA256(path, expected string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
 	}
-	return dst, nil
+	defer file.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return err
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(got, expected) {
+		return fmt.Errorf("checksum immagine base non valido: got %s, want %s", got, expected)
+	}
+	return nil
 }
 
 func requireTool(name string) error {
@@ -420,7 +492,7 @@ func (v VM) ensureSSHKey(ctx context.Context, root string) error {
 	if _, err := os.Stat(keyPath); err == nil {
 		return nil
 	}
-	_, _, err := v.runner.Run(ctx, "", nil, "ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyPath, "-C", "pibox-managed")
+	_, _, err := v.runner.Run(ctx, "", nil, "ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyPath, "-C", "pix-managed")
 	if err != nil {
 		return fmt.Errorf("generazione chiave SSH gestita da pix: %w", err)
 	}

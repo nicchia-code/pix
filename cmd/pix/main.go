@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"pibox/internal/cli"
+	"pix/internal/cli"
 )
 
 func main() {

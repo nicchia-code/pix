@@ -1,6 +1,6 @@
 //go:build !darwin
 
-package pibox
+package pix
 
 import "context"
 

@@ -1,4 +1,4 @@
-package pibox
+package pix
 
 type ExitError struct {
 	Code int

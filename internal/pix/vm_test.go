@@ -1,13 +1,15 @@
-package pibox
+package pix
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestSSHArgsPassSingleRemoteCommand(t *testing.T) {
 	ssh := &SSH{port: 1234, keyPath: "/tmp/key", knownHostPath: "/tmp/known_hosts"}
-	args := ssh.args("mkdir -p '/var/lib/pibox/repos/example/worktree'")
+	args := ssh.args("mkdir -p '/var/lib/pix/repos/example/worktree'")
 	last := args[len(args)-1]
 	if !strings.HasPrefix(last, "sh -lc ") {
 		t.Fatalf("last ssh arg = %q, want sh -lc command", last)
@@ -58,5 +60,31 @@ func TestParseSizeBytes(t *testing.T) {
 	}
 	if got != 40<<30 {
 		t.Fatalf("size = %d, want %d", got, int64(40<<30))
+	}
+}
+
+func TestParseSHA256SUMS(t *testing.T) {
+	data := []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa *other.img\n" +
+		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  ubuntu-24.04-server-cloudimg-amd64.img\n")
+	got, ok := parseSHA256SUMS(data, "ubuntu-24.04-server-cloudimg-amd64.img")
+	if !ok {
+		t.Fatal("checksum not found")
+	}
+	want := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if got != want {
+		t.Fatalf("checksum = %q, want %q", got, want)
+	}
+}
+
+func TestVerifyFileSHA256(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyFileSHA256(path, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyFileSHA256(path, "0000000000000000000000000000000000000000000000000000000000000000"); err == nil {
+		t.Fatal("expected checksum error")
 	}
 }

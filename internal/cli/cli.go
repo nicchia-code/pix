@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 
-	"pibox/internal/pibox"
+	"pix/internal/pix"
 )
 
 func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	app := pibox.NewApp(stdin, stdout, stderr)
+	app := pix.NewApp(stdin, stdout, stderr)
 	if err := app.Run(context.Background(), args); err != nil {
-		var exitErr pibox.ExitError
+		var exitErr pix.ExitError
 		if errors.As(err, &exitErr) {
 			fmt.Fprintln(stderr, exitErr.Error())
 			return exitErr.Code

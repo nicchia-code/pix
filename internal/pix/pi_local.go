@@ -1,4 +1,4 @@
-package pibox
+package pix
 
 import (
 	"archive/tar"
@@ -49,25 +49,26 @@ func syncLocalPiCustomizations(ctx context.Context, ssh *SSH) error {
 func writePiboxContextExtension(ctx context.Context, ssh *SSH) error {
 	const extension = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-const PIBOX_CONTEXT = ` + "`" + `You are running inside pix.
+const PIX_CONTEXT = ` + "`" + `You are running inside pix.
 
 Environment and security context:
 - You have root access inside this Linux machine.
 - This machine is an isolated, disposable VM managed by pix, not the user's host OS.
 - You may freely perform actions inside this VM when they help complete the task: install packages and SDKs, use package managers, edit system configuration, create files, run services, and use caches.
 - Do not try to escape the VM, mount or inspect host filesystems, access host secrets, use a host ssh-agent, or otherwise bypass the pix isolation boundary.
-- Treat the current repository as the VM-side copy. Make project changes here; pix sync is responsible for moving committed results back to the host.` + "`" + `;
+- Treat the current repository as the VM-side copy. Make project changes here; pix sync is responsible for moving committed results back to the host.
+- When your work is complete, commit and push the result so the host can import it: git add -A && git commit -m "<message>" && git push origin pi-result.` + "`" + `;
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
-    return { systemPrompt: event.systemPrompt + "\n\n" + PIBOX_CONTEXT };
+    return { systemPrompt: event.systemPrompt + "\n\n" + PIX_CONTEXT };
   });
 }
 `
 	script := `
 set -eu
 mkdir -p /root/.pi/agent/extensions
-cat > /root/.pi/agent/extensions/pibox-vm-context.ts
+cat > /root/.pi/agent/extensions/pix-vm-context.ts
 `
 	return ssh.RunWithInput(ctx, "", []byte(extension), script)
 }

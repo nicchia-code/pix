@@ -1,4 +1,4 @@
-package pibox
+package pix
 
 import (
 	"encoding/json"
@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	appName      = "pibox"
-	vmRoot       = "/var/lib/pibox"
+	appName      = "pix"
+	vmRoot       = "/var/lib/pix"
 	resultBranch = "pi-result"
 )
 
@@ -35,14 +35,14 @@ func NewRepoConfig(repoID string) RepoConfig {
 }
 
 func stateHome() (string, error) {
-	if override := os.Getenv("PIBOX_HOME"); override != "" {
+	if override := os.Getenv("PIX_HOME"); override != "" {
 		return filepath.Abs(override)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("lettura home utente: %w", err)
 	}
-	return filepath.Join(home, ".pibox"), nil
+	return filepath.Join(home, ".pix"), nil
 }
 
 func ensureStateTree() (string, error) {

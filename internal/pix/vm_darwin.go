@@ -1,6 +1,6 @@
 //go:build darwin
 
-package pibox
+package pix
 
 import (
 	"context"
@@ -244,7 +244,7 @@ func darwinGuestIPFromSerial(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	re := regexp.MustCompile(`PIBOX_IP=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)`)
+	re := regexp.MustCompile(`PIX_IP=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)`)
 	matches := re.FindAllStringSubmatch(string(data), -1)
 	if len(matches) == 0 {
 		return "", nil

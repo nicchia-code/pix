@@ -1,16 +1,16 @@
-# SPEC.md — pibox / Pi VM Runner
+# SPEC.md — pix / Pi VM Runner
 
 ## 1. Obiettivo
 
-`pibox` è una CLI che permette di eseguire Pi, un coding agent minimalista, dentro una VM Linux persistente e isolata dall'host.
+`pix` è una CLI che permette di eseguire Pi, un coding agent minimalista, dentro una VM Linux persistente e isolata dall'host.
 
 L'obiettivo è dare all'utente un'esperienza semplice:
 
 ```bash
-pibox init
-pibox sync --from-host
-pibox run
-pibox sync
+pix init
+pix sync --from-host
+pix new
+pix sync
 ```
 
 Pi lavora come `root` dentro la VM, può installare toolchain e modificare il sistema guest, ma non deve poter leggere o modificare direttamente il filesystem host.
@@ -85,7 +85,7 @@ Esiste una sola VM persistente per utente/macchina.
 
 ```text
 HOST
-  pibox
+  pix
   repo-a/
   repo-b/
   repo-c/
@@ -105,7 +105,7 @@ La VM è persistente per evitare reinstallazioni continue di toolchain pesanti, 
 Tutti i repo registrati vivono dentro la stessa VM:
 
 ```text
-/var/lib/pibox/
+/var/lib/pix/
   repos/
     <repo_id>/
       worktree/
@@ -129,13 +129,13 @@ i repo dentro la VM sono isolati tra loro
 Se Pi rompe un repo dentro la VM, l'utente può risincronizzarlo dall'host con:
 
 ```bash
-pibox sync --from-host
+pix sync --from-host
 ```
 
 Se Pi rompe tutta la VM, l'utente può ricrearla con:
 
 ```bash
-pibox vm reset
+pix vm reset
 ```
 
 ---
@@ -236,7 +236,7 @@ Pi gira come root nella VM.
 La CLI mantiene stato globale sotto:
 
 ```text
-~/.pibox/
+~/.pix/
   images/
     base-lts.img
   vm/
@@ -265,7 +265,7 @@ Ogni repo registrato deve avere metadata locali non versionati dentro `.git`.
 Percorso consigliato:
 
 ```text
-.git/pibox/config.json
+.git/pix/config.json
 ```
 
 Questo file non deve stare nel working tree e non deve essere committato.
@@ -276,16 +276,16 @@ Esempio:
 {
   "schema_version": 1,
   "repo_id": "app-frontend-a1b2c3",
-  "vm_repo_path": "/var/lib/pibox/repos/app-frontend-a1b2c3",
-  "worktree_path": "/var/lib/pibox/repos/app-frontend-a1b2c3/worktree",
-  "bridge_path": "/var/lib/pibox/repos/app-frontend-a1b2c3/bridge.git",
+  "vm_repo_path": "/var/lib/pix/repos/app-frontend-a1b2c3",
+  "worktree_path": "/var/lib/pix/repos/app-frontend-a1b2c3/worktree",
+  "bridge_path": "/var/lib/pix/repos/app-frontend-a1b2c3/bridge.git",
   "default_branch": "main"
 }
 ```
 
 Motivo: quando l'utente esegue un comando da un repo host, la CLI deve sapere quale repo VM corrisponde a quel clone locale.
 
-Non serve un file versionato tipo `pibox.yaml` nella v1.
+Non serve un file versionato tipo `pix.yaml` nella v1.
 
 ---
 
@@ -294,7 +294,7 @@ Non serve un file versionato tipo `pibox.yaml` nella v1.
 La VM contiene:
 
 ```text
-/var/lib/pibox/
+/var/lib/pix/
   repos/
     <repo_id>/
       worktree/
@@ -309,7 +309,7 @@ Per ogni repo:
 Dentro `worktree/`, il remote `origin` deve puntare solo al bare repo interno:
 
 ```bash
-origin = /var/lib/pibox/repos/<repo_id>/bridge.git
+origin = /var/lib/pix/repos/<repo_id>/bridge.git
 ```
 
 Non deve puntare a:
@@ -324,12 +324,12 @@ Non deve puntare a:
 
 ## 9. Comandi CLI
 
-## 9.1 `pibox init`
+## 9.1 `pix init`
 
 Crea o verifica la VM globale.
 
 ```bash
-pibox init
+pix init
 ```
 
 Responsabilità:
@@ -344,17 +344,17 @@ Responsabilità:
 
 Il comando deve essere idempotente.
 
-Eseguire più volte `pibox init` deve essere sicuro.
+Eseguire più volte `pix init` deve essere sicuro.
 
 ---
 
-## 9.2 `pibox init repo`
+## 9.2 `pix init repo`
 
 Registra il repo Git corrente nella VM.
 
 ```bash
 cd /path/al/repo
-pibox init repo
+pix init repo
 ```
 
 Precondizioni:
@@ -366,13 +366,13 @@ Responsabilità:
 
 1. trovare la root Git host;
 2. creare un `repo_id` stabile;
-3. creare metadata in `.git/pibox/config.json`;
+3. creare metadata in `.git/pix/config.json`;
 4. avviare/verificare la VM;
 5. creare dentro VM:
 
 ```text
-/var/lib/pibox/repos/<repo_id>/worktree/
-/var/lib/pibox/repos/<repo_id>/bridge.git/
+/var/lib/pix/repos/<repo_id>/worktree/
+/var/lib/pix/repos/<repo_id>/bridge.git/
 ```
 
 6. inizializzare `bridge.git` come bare repo;
@@ -384,19 +384,19 @@ Questo comando non deve necessariamente copiare i file del repo.
 Per importare i contenuti host nella VM si usa:
 
 ```bash
-pibox sync --from-host
+pix sync --from-host
 ```
 
 ---
 
-## 9.3 `pibox sync --from-host`
+## 9.3 `pix sync --from-host`
 
 Copia lo stato del repo host dentro la VM.
 
-Se il repo corrente non è ancora registrato, lo registra automaticamente creando `.git/pibox/config.json` e i path VM necessari. `pibox init repo` resta disponibile come comando esplicito/idempotente, ma non è richiesto nel flusso normale dopo `pibox init`.
+Se il repo corrente non è ancora registrato, lo registra automaticamente creando `.git/pix/config.json` e i path VM necessari. `pix init repo` resta disponibile come comando esplicito/idempotente, ma non è richiesto nel flusso normale dopo `pix init`.
 
 ```bash
-pibox sync --from-host
+pix sync --from-host
 ```
 
 Semantica:
@@ -444,12 +444,12 @@ Esempio:
 Questo comando sovrascriverà la copia del repo dentro la VM.
 
 Eventuali modifiche presenti in:
-  /var/lib/pibox/repos/<repo_id>/worktree
+  /var/lib/pix/repos/<repo_id>/worktree
 
 andranno perse se non sono già state portate fuori.
 
 Usa:
-  pibox sync --from-host --force
+  pix sync --from-host --force
 
 per continuare.
 ```
@@ -458,24 +458,30 @@ per continuare.
 
 ---
 
-## 9.4 `pibox run`
+## 9.4 `pix new`
 
-Lancia Pi dentro la VM sul repo corrente.
+Lancia una nuova sessione Pi dentro la VM sul repo corrente.
 
 ```bash
-pibox run
+pix new
+```
+
+Chiamare `pix` senza argomenti è equivalente a:
+
+```bash
+pix resume
 ```
 
 Responsabilità:
 
 1. trovare la root Git host;
-2. leggere `.git/pibox/config.json`;
+2. leggere `.git/pix/config.json`;
 3. avviare la VM se spenta;
 4. assicurare SSH locale;
 5. eseguire Pi come root dentro:
 
 ```text
-/var/lib/pibox/repos/<repo_id>/worktree
+/var/lib/pix/repos/<repo_id>/worktree
 ```
 
 La VM ha internet libero.
@@ -490,18 +496,18 @@ La VM non riceve:
 
 ### 9.4.1 Test
 
-I test reali si eseguono sull'host dopo `pibox sync`.
+I test reali si eseguono sull'host dopo `pix sync`.
 
 La VM può essere usata da Pi per installare tool, analizzare codice, modificare file e preparare commit, ma non deve contenere gli `.env` necessari ai test reali.
 
 ---
 
-## 9.5 `pibox sync`
+## 9.5 `pix sync`
 
 Porta le modifiche prodotte da Pi dalla VM al repo host.
 
 ```bash
-pibox sync
+pix sync
 ```
 
 Responsabilità:
@@ -515,14 +521,14 @@ Responsabilità:
 Forma concettuale:
 
 ```bash
-git pull ssh://root@127.0.0.1:<port>/var/lib/pibox/repos/<repo_id>/bridge.git <branch>
+git pull ssh://root@127.0.0.1:<port>/var/lib/pix/repos/<repo_id>/bridge.git <branch>
 ```
 
 La CLI nasconde `<port>`, `<repo_id>` e `<branch>`.
 
 ### 9.5.1 Cosa NON deve fare
 
-`pibox sync` non deve:
+`pix sync` non deve:
 
 - fare `git add` nella VM;
 - fare `git commit` nella VM;
@@ -533,14 +539,14 @@ La CLI nasconde `<port>`, `<repo_id>` e `<branch>`.
 
 Pi deve committare e pushare da solo verso `bridge.git`.
 
-Se Pi non ha committato o pushato nulla, `pibox sync` non porta modifiche.
+Se Pi non ha committato o pushato nulla, `pix sync` non porta modifiche.
 
 ### 9.5.2 Contratto per Pi
 
 Pi deve sapere che, alla fine del lavoro, deve fare:
 
 ```bash
-cd /var/lib/pibox/repos/<repo_id>/worktree
+cd /var/lib/pix/repos/<repo_id>/worktree
 git add -A
 git commit -m "<messaggio>"
 git push origin <branch>
@@ -549,7 +555,7 @@ git push origin <branch>
 Dove:
 
 ```bash
-origin = /var/lib/pibox/repos/<repo_id>/bridge.git
+origin = /var/lib/pix/repos/<repo_id>/bridge.git
 ```
 
 Branch consigliato per v1:
@@ -564,18 +570,18 @@ oppure un branch fisso gestito dalla CLI, ad esempio:
 pi-result
 ```
 
-La scelta deve essere coerente tra `run` e `sync`.
+La scelta deve essere coerente tra `new` e `sync`.
 
 Raccomandazione v1: usare `pi-result` per evitare ambiguità con il branch host.
 
 ---
 
-## 9.6 `pibox vm reset`
+## 9.6 `pix vm reset`
 
 Reset completo della VM globale.
 
 ```bash
-pibox vm reset
+pix vm reset
 ```
 
 Questo comando è distruttivo.
@@ -592,7 +598,7 @@ Deve mostrare un avviso esplicito.
 Esempio:
 
 ```text
-ATTENZIONE: questo eliminerà tutta la VM pibox.
+ATTENZIONE: questo eliminerà tutta la VM pix.
 
 Verranno eliminati:
 - toolchain installate
@@ -609,36 +615,23 @@ Non verranno toccati:
 - chiavi SSH host
 
 Per continuare:
-  pibox vm reset --yes
+  pix vm reset --yes
 ```
 
 `vm reset` non deve mai essere eseguito implicitamente da update o init.
 
 ---
 
-## 9.7 `pibox image update`
+## 9.7 Immagine base LTS
 
-Aggiorna l'immagine base LTS usata per future VM/reset.
+Non esiste un comando utente per aggiornare l'immagine base.
 
-```bash
-pibox image update
-```
-
-Questo comando non modifica la VM esistente.
-
-Serve solo a scaricare una nuova immagine base che verrà usata da:
-
-```bash
-pibox vm reset
-```
-
-o da nuove installazioni.
+La CLI scarica l'immagine LTS prevista dal codice quando deve creare una VM o quando l'immagine manca. Se serve passare a una nuova LTS, si aggiorna il codice della CLI.
 
 Regola fondamentale:
 
 ```text
-aggiornare la CLI non aggiorna la VM
-aggiornare l'immagine non aggiorna la VM esistente
+aggiornare la CLI non aggiorna la VM esistente
 resettare la VM è sempre esplicito
 ```
 
@@ -650,7 +643,7 @@ Ci sono tre livelli distinti.
 
 ### 10.1 CLI host
 
-Il binario `pibox`.
+Il binario `pix`.
 
 Può essere aggiornato tramite package manager o installer.
 
@@ -660,11 +653,7 @@ Aggiornare la CLI non deve cancellare né modificare la VM persistente.
 
 Template usato per creare o resettare la VM.
 
-Si aggiorna solo esplicitamente con:
-
-```bash
-pibox image update
-```
+Non è aggiornabile con un comando utente dedicato. La versione dell'immagine è una decisione del codice CLI; una nuova LTS richiede un aggiornamento della CLI.
 
 Non modifica VM già esistenti.
 
@@ -675,7 +664,7 @@ Pi è il payload eseguito dentro la VM.
 Opzioni possibili:
 
 - Pi è incluso nell'immagine base;
-- Pi viene aggiornato dalla CLI durante `run`;
+- Pi viene aggiornato dalla CLI durante `new`;
 - Pi viene aggiornato con comando esplicito.
 
 Raccomandazione v1: includere Pi nell'immagine base LTS e permettere upgrade esplicito futuro. Non introdurre update automatici nella v1.
@@ -692,12 +681,12 @@ Pi non scrive mai direttamente sul repo host.
 
 Pi scrive nel worktree VM, committa e pusha nel bare repo interno alla VM.
 
-L'host importa con `pibox sync`, che esegue un `git pull` dal bare repo VM.
+L'host importa con `pix sync`, che esegue un `git pull` dal bare repo VM.
 
 ### 11.2 Flusso host -> VM
 
 ```bash
-pibox sync --from-host
+pix sync --from-host
 ```
 
 Concettualmente:
@@ -713,7 +702,7 @@ host tracked files
 Pi dentro VM:
 
 ```bash
-cd /var/lib/pibox/repos/<repo_id>/worktree
+cd /var/lib/pix/repos/<repo_id>/worktree
 git add -A
 git commit -m "..."
 git push origin pi-result
@@ -722,13 +711,13 @@ git push origin pi-result
 Host:
 
 ```bash
-pibox sync
+pix sync
 ```
 
 Concettualmente:
 
 ```bash
-git pull ssh://root@127.0.0.1:<port>/var/lib/pibox/repos/<repo_id>/bridge.git pi-result
+git pull ssh://root@127.0.0.1:<port>/var/lib/pix/repos/<repo_id>/bridge.git pi-result
 ```
 
 ### 11.4 Rollback
@@ -846,7 +835,7 @@ app-frontend-a1b2c3
 Il mapping vive in:
 
 ```text
-.git/pibox/config.json
+.git/pix/config.json
 ```
 
 Non dedurre il mapping solo dal path host, perché il repo può essere spostato.
@@ -869,7 +858,7 @@ Se repo già registrato, verifica metadata e path VM.
 
 Può essere ripetuto. Se il repo non è registrato, lo registra automaticamente. Sovrascrive VM secondo lo stato host.
 
-### `run`
+### `new`
 
 Può essere ripetuto. Avvia VM se serve.
 
@@ -890,20 +879,20 @@ Non è idempotente in senso non distruttivo. Richiede `--yes`.
 Mostrare errore chiaro e suggerire:
 
 ```bash
-pibox vm reset
+pix vm reset
 ```
 
 solo come opzione esplicita.
 
 ### 17.2 Repo non registrato
 
-Se l'utente esegue `run` o `sync` in direzione VM→host in un repo non registrato:
+Se l'utente esegue `new` o `sync` in direzione VM→host in un repo non registrato:
 
 ```text
-Questo repo non è registrato con pibox.
+Questo repo non è registrato con pix.
 
 Esegui:
-  pibox init repo
+  pix init repo
 ```
 
 Se invece esegue `sync --from-host`, la CLI registra automaticamente il repo prima di sincronizzarlo.
@@ -916,7 +905,7 @@ Se metadata host esistono ma il worktree VM non esiste:
 La copia VM di questo repo non esiste o è stata eliminata.
 
 Esegui:
-  pibox sync --from-host
+  pix sync --from-host
 ```
 
 ### 17.4 Bridge Git mancante
@@ -928,7 +917,7 @@ Se `bridge.git` manca:
 
 ### 17.5 Sync VM→host senza commit Pi
 
-Se `pibox sync` non trova modifiche/branch remoto:
+Se `pix sync` non trova modifiche/branch remoto:
 
 ```text
 Nessun risultato da importare dalla VM.
@@ -943,26 +932,27 @@ Pi potrebbe non aver ancora committato/pushato nel bridge Git.
 ### Primo setup
 
 ```bash
-pibox init
+pix init
 ```
 
 ### Import progetto esistente
 
 ```bash
 cd ~/code/my-app
-pibox sync --from-host
+pix sync --from-host
 ```
 
 ### Usare Pi
 
 ```bash
-pibox run
+pix new      # nuova sessione
+pix          # riprende la sessione precedente, equivalente a pix resume
 ```
 
 ### Importare modifiche da Pi
 
 ```bash
-pibox sync
+pix sync
 ```
 
 ### Testare
@@ -977,14 +967,14 @@ flutter test
 ### Se Pi rompe la copia VM
 
 ```bash
-pibox sync --from-host --force
+pix sync --from-host --force
 ```
 
 ### Se Pi rompe tutta la VM
 
 ```bash
-pibox vm reset --yes
-pibox sync --from-host
+pix vm reset --yes
+pix sync --from-host
 ```
 
 ---
@@ -1009,7 +999,7 @@ Non implementare nella v1:
 
 ## 20. Decisioni v1
 
-- Nome CLI: `pibox`.
+- Nome CLI: `pix`.
 - Linguaggio implementazione: Go.
 - Distro base v1: Ubuntu LTS server/cloud image headless, senza desktop.
 - Disco VM v1: `qcow2` dinamico/sparse con dimensione virtuale predefinita `40G`.
@@ -1036,16 +1026,16 @@ Queste regole non devono essere violate:
 5. La VM non riceve secret host.
 
 6. Ogni repo registrato ha:
-   /var/lib/pibox/repos/<repo_id>/worktree
-   /var/lib/pibox/repos/<repo_id>/bridge.git
+   /var/lib/pix/repos/<repo_id>/worktree
+   /var/lib/pix/repos/<repo_id>/bridge.git
 
 7. Pi pusha solo verso il bridge Git interno alla VM.
 
-8. pibox sync senza flag esegue solo git pull dal bridge Git VM verso host.
+8. pix sync senza flag esegue solo git pull dal bridge Git VM verso host.
 
-9. pibox sync --from-host è distruttivo lato VM e mantiene la storia Git host nel bridge.
+9. pix sync --from-host è distruttivo lato VM e mantiene la storia Git host nel bridge.
 
-10. pibox vm reset distrugge e ricrea tutta la VM, con avviso esplicito.
+10. pix vm reset distrugge e ricrea tutta la VM, con avviso esplicito.
 
 11. Rollback del repo host è responsabilità di Git, non della CLI.
 

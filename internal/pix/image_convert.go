@@ -1,4 +1,4 @@
-package pibox
+package pix
 
 import (
 	"fmt"
