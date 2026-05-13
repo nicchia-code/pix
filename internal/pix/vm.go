@@ -22,18 +22,24 @@ import (
 )
 
 type VMState struct {
-	Backend   string `json:"backend"`
-	Image     string `json:"image"`
-	SSHHost   string `json:"ssh_host,omitempty"`
-	SSHPort   int    `json:"ssh_port,omitempty"`
-	PID       int    `json:"pid,omitempty"`
-	BaseImage string `json:"base_image,omitempty"`
-	Disk      string `json:"disk,omitempty"`
-	DiskSize  string `json:"disk_size,omitempty"`
-	Seed      string `json:"seed,omitempty"`
+	Backend            string `json:"backend"`
+	Image              string `json:"image"`
+	SSHHost            string `json:"ssh_host,omitempty"`
+	SSHPort            int    `json:"ssh_port,omitempty"`
+	PID                int    `json:"pid,omitempty"`
+	BaseImage          string `json:"base_image,omitempty"`
+	Disk               string `json:"disk,omitempty"`
+	DiskSize           string `json:"disk_size,omitempty"`
+	Seed               string `json:"seed,omitempty"`
+	WSLDistro          string `json:"wsl_distro,omitempty"`
+	WSLInstallLocation string `json:"wsl_install_location,omitempty"`
+	WSLRootFS          string `json:"wsl_rootfs,omitempty"`
 }
 
-const defaultDiskSize = "40G"
+const (
+	defaultDiskSize  = "40G"
+	defaultWSLDistro = "pix-default"
+)
 
 type VM struct {
 	runner commandRunner
@@ -68,8 +74,20 @@ func (v VM) Init(ctx context.Context) (string, error) {
 	}
 	switch runtime.GOOS {
 	case "linux":
-		if err := v.ensureQEMU(ctx, root, statePath); err != nil {
+		state, err := readVMState(statePath)
+		if err != nil {
 			return "", err
+		}
+		state = normalizeVMState(root, state)
+		switch state.Backend {
+		case "wsl2-appliance":
+			if err := v.ensureWSL2Appliance(ctx, root, statePath); err != nil {
+				return "", err
+			}
+		default:
+			if err := v.ensureQEMU(ctx, root, statePath); err != nil {
+				return "", err
+			}
 		}
 	case "darwin":
 		if err := v.ensureAppleVirtualization(ctx, root, statePath); err != nil {
@@ -289,9 +307,9 @@ func imageName() string {
 func baseImageFile() string {
 	switch runtime.GOARCH {
 	case "arm64":
-		return "ubuntu-24.04-server-cloudimg-arm64.img"
+		return "noble-server-cloudimg-arm64.img"
 	default:
-		return "ubuntu-24.04-server-cloudimg-amd64.img"
+		return "noble-server-cloudimg-amd64.img"
 	}
 }
 

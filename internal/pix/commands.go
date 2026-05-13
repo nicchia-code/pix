@@ -99,8 +99,12 @@ func (a *App) runSync(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := requireCleanWorktree(ctx, r, root); err != nil {
+	status, err := gitStatus(ctx, r, root)
+	if err != nil {
 		return err
+	}
+	if status != "" {
+		fmt.Fprintln(a.err, "ATTENZIONE: il repo host ha modifiche non committate; pix sync --from-host sincronizzerà lo stato attuale del working tree nella VM.")
 	}
 	cfg, initialized, err := loadOrInitRepoConfig(ctx, r, root)
 	if err != nil {
@@ -273,8 +277,16 @@ func (a *App) runVM(ctx context.Context, args []string) error {
 		return err
 	}
 	statePath := root + "/vm/default/state.json"
-	if state, err := readVMState(statePath); err == nil && state.PID > 0 {
-		_ = stopProcess(state.PID)
+	if state, err := readVMState(statePath); err == nil {
+		if state.Backend == "wsl2-appliance" {
+			distro := state.WSLDistro
+			if distro == "" {
+				distro = defaultWSLDistro
+			}
+			_ = unregisterWSLDistro(ctx, osRunner{}, distro)
+		} else if state.PID > 0 {
+			_ = stopProcess(state.PID)
+		}
 	}
 	if err := os.RemoveAll(root + "/vm/default"); err != nil {
 		return err
@@ -356,20 +368,39 @@ func vmWorktreeDirty(ctx context.Context, ssh *SSH, cfg RepoConfig) (bool, error
 }
 
 func syncGitRepoToVM(ctx context.Context, r commandRunner, root string, ssh *SSH, cfg RepoConfig) error {
-	_, _, err := r.Run(ctx, root, nil, "git", "-c", "core.sshCommand="+ssh.GitSSHCommand(), "push", "--force", ssh.PullURL(cfg.BridgePath), "HEAD:refs/heads/"+resultBranch)
+	hasHead, err := gitHasHead(ctx, r, root)
+	if err != nil {
+		return err
+	}
+	if hasHead {
+		_, _, err = r.Run(ctx, root, nil, "git", "-c", "core.sshCommand="+ssh.GitSSHCommand(), "push", "--force", ssh.PullURL(cfg.BridgePath), "HEAD:refs/heads/"+resultBranch)
+		if err != nil {
+			return err
+		}
+	}
+	tarData, err := gitWorktreeTar(ctx, r, root)
 	if err != nil {
 		return err
 	}
 	script := fmt.Sprintf(`
 set -eu
 rm -rf %[1]s
-git clone --branch %[3]s %[2]s %[1]s >/dev/null
+if git --git-dir=%[2]s rev-parse --verify --quiet refs/heads/%[3]s >/dev/null; then
+  git clone --branch %[3]s %[2]s %[1]s >/dev/null
+else
+  mkdir -p %[1]s
+  cd %[1]s
+  git init >/dev/null
+  git remote add origin %[2]s
+fi
 cd %[1]s
 git config user.name "pix"
 git config user.email "pix@localhost"
 git remote set-url origin %[2]s
+find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+tar -xf -
 `, shellQuote(cfg.WorktreePath), shellQuote(cfg.BridgePath), shellQuote(resultBranch))
-	return ssh.Run(ctx, "", script)
+	return ssh.RunWithInput(ctx, "", tarData, script)
 }
 
 func shellQuoteAll(args []string) string {

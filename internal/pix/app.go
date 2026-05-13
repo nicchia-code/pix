@@ -78,7 +78,8 @@ init repo registers the current Git repo in .git/pix/config.json.`)
   pix sync --from-host [--force]
 
 pix sync imports committed Pi results from the VM bridge Git repo into the host repo.
-pix sync --from-host copies tracked files from the clean host Git HEAD into the VM worktree.
+pix sync --from-host copies the current host working tree into the VM worktree.
+If the host has uncommitted changes, sync --from-host warns but continues.
 If the current repo is not registered yet, sync --from-host registers it automatically.
 The --from-host direction overwrites the VM-side copy of the current repo.`)
 	case "new":

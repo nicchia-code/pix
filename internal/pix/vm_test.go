@@ -65,8 +65,8 @@ func TestParseSizeBytes(t *testing.T) {
 
 func TestParseSHA256SUMS(t *testing.T) {
 	data := []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa *other.img\n" +
-		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  ubuntu-24.04-server-cloudimg-amd64.img\n")
-	got, ok := parseSHA256SUMS(data, "ubuntu-24.04-server-cloudimg-amd64.img")
+		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  noble-server-cloudimg-amd64.img\n")
+	got, ok := parseSHA256SUMS(data, "noble-server-cloudimg-amd64.img")
 	if !ok {
 		t.Fatal("checksum not found")
 	}
