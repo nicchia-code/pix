@@ -24,14 +24,14 @@ func syncLocalPiCustomizations(ctx context.Context, ssh *SSH) error {
 	}
 	piDir := filepath.Join(home, ".pi", "agent")
 	if _, err := os.Stat(piDir); errors.Is(err, os.ErrNotExist) {
-		return writePiboxContextExtension(ctx, ssh)
+		return writePixExtension(ctx, ssh)
 	} else if err != nil {
 		return err
 	}
 	if err := syncLocalPiExtensions(ctx, ssh, filepath.Join(piDir, "extensions")); err != nil {
 		return err
 	}
-	if err := writePiboxContextExtension(ctx, ssh); err != nil {
+	if err := writePixExtension(ctx, ssh); err != nil {
 		return err
 	}
 	packages, err := readLocalPiPackages(filepath.Join(piDir, "settings.json"))
@@ -46,8 +46,11 @@ func syncLocalPiCustomizations(ctx context.Context, ssh *SSH) error {
 	return nil
 }
 
-func writePiboxContextExtension(ctx context.Context, ssh *SSH) error {
-	const extension = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+func writePixExtension(ctx context.Context, ssh *SSH) error {
+	const extension = `import { execFileSync } from "node:child_process";
+import path from "node:path";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 const PIX_CONTEXT = ` + "`" + `You are running inside pix.
 
@@ -59,16 +62,75 @@ Environment and security context:
 - Treat the current repository as the VM-side copy. Make project changes here; pix sync is responsible for moving committed results back to the host.
 - When your work is complete, commit and push the result so the host can import it: git add -A && git commit -m "<message>" && git push origin pi-result.` + "`" + `;
 
+type SyncState = { cwd: string; synced: boolean; checkedAt: number };
+let syncState: SyncState | undefined;
+
+function git(cwd: string, args: string[]): string {
+  return execFileSync("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 1000,
+  }).trim();
+}
+
+function isSynced(cwd: string): boolean {
+  try {
+    if (git(cwd, ["status", "--porcelain"]) !== "") return false;
+    const head = git(cwd, ["rev-parse", "HEAD"]);
+    const remote = git(cwd, ["ls-remote", "origin", "refs/heads/pi-result"]).split(/\s+/)[0] || "";
+    return remote !== "" && head === remote;
+  } catch {
+    return false;
+  }
+}
+
+function cachedSync(cwd: string): boolean {
+  const now = Date.now();
+  if (!syncState || syncState.cwd !== cwd || now - syncState.checkedAt > 1500) {
+    syncState = { cwd, synced: isSynced(cwd), checkedAt: now };
+  }
+  return syncState.synced;
+}
+
+function projectName(cwd: string): string {
+  if (path.basename(cwd) === "worktree") {
+    return path.basename(path.dirname(cwd)).replace(/-[0-9a-f]{6}-[0-9a-f]{6}$/, "");
+  }
+  return path.basename(cwd) || cwd;
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
     return { systemPrompt: event.systemPrompt + "\n\n" + PIX_CONTEXT };
+  });
+
+  pi.on("session_start", async (_event, ctx) => {
+    ctx.ui.setFooter((tui, theme, footerData) => {
+      const interval = setInterval(() => tui.requestRender(), 1500);
+      const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
+
+      return {
+        dispose() {
+          clearInterval(interval);
+          unsubBranch();
+        },
+        invalidate() {},
+        render(width: number): string[] {
+          const cwd = ctx.sessionManager.getCwd();
+          const synced = cachedSync(cwd);
+          const status = synced ? theme.fg("success", "SYNC") : theme.fg("error", "OUT OF SYNC");
+          return [truncateToWidth(theme.fg("dim", projectName(cwd) + " ") + status, width, theme.fg("dim", "..."))];
+        },
+      };
+    });
   });
 }
 `
 	script := `
 set -eu
 mkdir -p /root/.pi/agent/extensions
-cat > /root/.pi/agent/extensions/pix-vm-context.ts
+rm -f /root/.pi/agent/extensions/pix-vm-context.ts
+cat > /root/.pi/agent/extensions/pix-ext.ts
 `
 	return ssh.RunWithInput(ctx, "", []byte(extension), script)
 }
