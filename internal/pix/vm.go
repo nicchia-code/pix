@@ -289,9 +289,9 @@ func imageName() string {
 func baseImageFile() string {
 	switch runtime.GOARCH {
 	case "arm64":
-		return "ubuntu-24.04-server-cloudimg-arm64.img"
+		return "noble-server-cloudimg-arm64.img"
 	default:
-		return "ubuntu-24.04-server-cloudimg-amd64.img"
+		return "noble-server-cloudimg-amd64.img"
 	}
 }
 

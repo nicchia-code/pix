@@ -1,11 +1,15 @@
 package pix
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -43,8 +47,12 @@ func currentBranch(ctx context.Context, r commandRunner, root string) (string, e
 	return branch, nil
 }
 
+func gitStatus(ctx context.Context, r commandRunner, root string) (string, error) {
+	return commandText(ctx, r, root, "git", "status", "--porcelain")
+}
+
 func requireCleanWorktree(ctx context.Context, r commandRunner, root string) error {
-	status, err := commandText(ctx, r, root, "git", "status", "--porcelain")
+	status, err := gitStatus(ctx, r, root)
 	if err != nil {
 		return err
 	}
@@ -60,6 +68,77 @@ func gitArchive(ctx context.Context, r commandRunner, root string) ([]byte, erro
 		return nil, err
 	}
 	return stdout, nil
+}
+
+func gitHasHead(ctx context.Context, r commandRunner, root string) (bool, error) {
+	_, _, err := r.Run(ctx, root, nil, "git", "rev-parse", "--verify", "HEAD")
+	if err == nil {
+		return true, nil
+	}
+	return false, nil
+}
+
+func gitWorktreeTar(ctx context.Context, r commandRunner, root string) ([]byte, error) {
+	stdout, _, err := r.Run(ctx, root, nil, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	paths := strings.Split(string(stdout), "\x00")
+	for _, rel := range paths {
+		if rel == "" {
+			continue
+		}
+		if err := addPathToTar(tw, root, rel); err != nil {
+			_ = tw.Close()
+			return nil, err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func addPathToTar(tw *tar.Writer, root, rel string) error {
+	cleanRel := filepath.ToSlash(filepath.Clean(rel))
+	if cleanRel == "." || strings.HasPrefix(cleanRel, "../") || filepath.IsAbs(cleanRel) {
+		return nil
+	}
+	fullPath := filepath.Join(root, filepath.FromSlash(cleanRel))
+	info, err := os.Lstat(fullPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var link string
+	if info.Mode()&os.ModeSymlink != 0 {
+		link, err = os.Readlink(fullPath)
+		if err != nil {
+			return err
+		}
+	}
+	hdr, err := tar.FileInfoHeader(info, link)
+	if err != nil {
+		return err
+	}
+	hdr.Name = cleanRel
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+	f, err := os.Open(fullPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(tw, f)
+	return err
 }
 
 func makeRepoID(root string) (string, error) {
