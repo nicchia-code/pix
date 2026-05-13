@@ -7,7 +7,7 @@
 L'obiettivo è dare all'utente un'esperienza semplice:
 
 ```bash
-pix init
+pix install
 pix sync --from-host
 pix new
 pix sync
@@ -324,12 +324,12 @@ Non deve puntare a:
 
 ## 9. Comandi CLI
 
-## 9.1 `pix init`
+## 9.1 `pix install`
 
 Crea o verifica la VM globale.
 
 ```bash
-pix init
+pix install
 ```
 
 Responsabilità:
@@ -344,56 +344,15 @@ Responsabilità:
 
 Il comando deve essere idempotente.
 
-Eseguire più volte `pix init` deve essere sicuro.
+Eseguire più volte `pix install` deve essere sicuro.
 
 ---
 
-## 9.2 `pix init repo`
-
-Registra il repo Git corrente nella VM.
-
-```bash
-cd /path/al/repo
-pix init repo
-```
-
-Precondizioni:
-
-- deve essere eseguito dentro un repo Git host;
-- se non esiste `.git`, la CLI può suggerire `git init`, ma non deve necessariamente farlo automaticamente.
-
-Responsabilità:
-
-1. trovare la root Git host;
-2. creare un `repo_id` stabile;
-3. creare metadata in `.git/pix/config.json`;
-4. avviare/verificare la VM;
-5. creare dentro VM:
-
-```text
-/var/lib/pix/repos/<repo_id>/worktree/
-/var/lib/pix/repos/<repo_id>/bridge.git/
-```
-
-6. inizializzare `bridge.git` come bare repo;
-7. preparare `worktree` come repo Git;
-8. configurare `origin` del worktree verso `bridge.git`.
-
-Questo comando non deve necessariamente copiare i file del repo.
-
-Per importare i contenuti host nella VM si usa:
-
-```bash
-pix sync --from-host
-```
-
----
-
-## 9.3 `pix sync --from-host`
+## 9.2 `pix sync --from-host`
 
 Copia lo stato del repo host dentro la VM.
 
-Se il repo corrente non è ancora registrato, lo registra automaticamente creando `.git/pix/config.json` e i path VM necessari. `pix init repo` resta disponibile come comando esplicito/idempotente, ma non è richiesto nel flusso normale dopo `pix init`.
+Se il repo corrente non è ancora registrato, lo registra automaticamente creando `.git/pix/config.json` e i path VM necessari.
 
 ```bash
 pix sync --from-host
@@ -408,7 +367,7 @@ VM viene sovrascritta
 
 Questa operazione è distruttiva lato VM.
 
-### 9.3.1 Cosa copia
+### 9.2.1 Cosa copia
 
 Copia i file tracked da Git.
 
@@ -434,7 +393,7 @@ Motivo: il bridge deve mantenere la stessa storia Git del repo host, così la su
 
 Nota: se si vuole includere modifiche tracked non committate, bisogna decidere una strategia esplicita. La v1 può richiedere working tree pulito, oppure esportare index/working tree con logica dedicata. Decisione consigliata per v1: richiedere working tree host pulito.
 
-### 9.3.2 Warning distruttivo
+### 9.2.2 Warning distruttivo
 
 Se la VM contiene modifiche non esportate, `sync --from-host` deve avvisare.
 
@@ -458,7 +417,7 @@ per continuare.
 
 ---
 
-## 9.4 `pix new`
+## 9.3 `pix new`
 
 Lancia una nuova sessione Pi dentro la VM sul repo corrente.
 
@@ -494,7 +453,7 @@ La VM non riceve:
 - ssh-agent host;
 - `~/.ssh` host.
 
-### 9.4.1 Test
+### 9.3.1 Test
 
 I test reali si eseguono sull'host dopo `pix sync`.
 
@@ -502,7 +461,7 @@ La VM può essere usata da Pi per installare tool, analizzare codice, modificare
 
 ---
 
-## 9.5 `pix sync`
+## 9.4 `pix sync`
 
 Porta le modifiche prodotte da Pi dalla VM al repo host.
 
@@ -526,7 +485,7 @@ git pull ssh://root@127.0.0.1:<port>/var/lib/pix/repos/<repo_id>/bridge.git <bra
 
 La CLI nasconde `<port>`, `<repo_id>` e `<branch>`.
 
-### 9.5.1 Cosa NON deve fare
+### 9.4.1 Cosa NON deve fare
 
 `pix sync` non deve:
 
@@ -541,7 +500,7 @@ Pi deve committare e pushare da solo verso `bridge.git`.
 
 Se Pi non ha committato o pushato nulla, `pix sync` non porta modifiche.
 
-### 9.5.2 Contratto per Pi
+### 9.4.2 Contratto per Pi
 
 Pi deve sapere che, alla fine del lavoro, deve fare:
 
@@ -576,7 +535,7 @@ Raccomandazione v1: usare `pi-result` per evitare ambiguità con il branch host.
 
 ---
 
-## 9.6 `pix vm reset`
+## 9.5 `pix vm reset`
 
 Reset completo della VM globale.
 
@@ -618,11 +577,11 @@ Per continuare:
   pix vm reset --yes
 ```
 
-`vm reset` non deve mai essere eseguito implicitamente da update o init.
+`vm reset` non deve mai essere eseguito implicitamente da update o install.
 
 ---
 
-## 9.7 Immagine base LTS
+## 9.6 Immagine base LTS
 
 Non esiste un comando utente per aggiornare l'immagine base.
 
@@ -846,13 +805,9 @@ Non dedurre il mapping solo dal path host, perché il repo può essere spostato.
 
 Tutti i comandi devono essere idempotenti dove possibile.
 
-### `init`
+### `install`
 
 Se VM esiste, verifica e non ricrea.
-
-### `init repo`
-
-Se repo già registrato, verifica metadata e path VM.
 
 ### `sync --from-host`
 
@@ -892,7 +847,7 @@ Se l'utente esegue `new` o `sync` in direzione VM→host in un repo non registra
 Questo repo non è registrato con pix.
 
 Esegui:
-  pix init repo
+  pix sync --from-host
 ```
 
 Se invece esegue `sync --from-host`, la CLI registra automaticamente il repo prima di sincronizzarlo.
@@ -932,7 +887,7 @@ Pi potrebbe non aver ancora committato/pushato nel bridge Git.
 ### Primo setup
 
 ```bash
-pix init
+pix install
 ```
 
 ### Import progetto esistente

@@ -70,7 +70,7 @@ func readRepoConfig(gitDir string) (RepoConfig, error) {
 	path := repoConfigPath(gitDir)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return RepoConfig{}, userError("Questo repo non è registrato con pix.\n\nEsegui:\n  pix init repo")
+		return RepoConfig{}, userError("Questo repo non è registrato con pix.\n\nEsegui:\n  pix sync --from-host")
 	}
 	if err != nil {
 		return RepoConfig{}, fmt.Errorf("lettura %s: %w", path, err)
