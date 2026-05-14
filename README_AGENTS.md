@@ -69,7 +69,9 @@ Support:
 - waits for SSH to become reachable;
 - syncs local Pi customizations into the VM.
 
-### 2. Host to VM sync
+### 2. Repository sync
+
+The operational order is usually host -> VM, then Pi execution, then VM -> host. The two sync directions are grouped here because they define the host/VM boundary.
 
 `pix sync --from-host`:
 
@@ -80,6 +82,15 @@ Support:
 - updates the VM bridge and VM worktree.
 
 Important current behavior: `gitWorktreeTar()` includes untracked, non-ignored files and uncommitted tracked changes. Do not assume host-to-VM sync is committed/tracked-only unless the implementation is changed deliberately.
+
+`pix sync`:
+
+- requires a clean host worktree;
+- checks that the bridge has the expected branch;
+- fetches from the bridge Git repository over SSH;
+- merges `FETCH_HEAD` with `--no-edit`.
+
+The code must not automatically commit VM changes. Pi must commit and push from inside the guest.
 
 ### 3. Pi execution
 
@@ -92,17 +103,6 @@ Important current behavior: `gitWorktreeTar()` includes untracked, non-ignored f
 - run `pi` inside the VM `worktree/`.
 
 The official bridge branch is `pi-result`.
-
-### 4. VM to host sync
-
-`pix sync`:
-
-- requires a clean host worktree;
-- checks that the bridge has the expected branch;
-- fetches from the bridge Git repository over SSH;
-- merges `FETCH_HEAD` with `--no-edit`.
-
-The code must not automatically commit VM changes. Pi must commit and push from inside the guest.
 
 ## Persistent state
 

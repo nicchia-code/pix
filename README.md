@@ -68,15 +68,21 @@ Running `pix` with no arguments is equivalent to `pix resume`.
 
 ## Main commands
 
-### `pix install`
+### Setup
+
+#### `pix install`
 
 Initializes or verifies host-side state, prepares the right VM backend for the platform, generates the SSH key managed by `pix`, downloads the Ubuntu LTS base image when needed, creates the persistent disk when needed, configures guest SSH, and verifies that the VM is reachable.
 
 The command is intended to be idempotent. Running it multiple times should be safe.
 
-### `pix sync --from-host`
+### Repository sync
 
-Registers the current repository if needed and synchronizes the host project into the VM.
+`pix` has two sync directions. They are intentionally documented together because they are the boundary between the host checkout and the VM copy.
+
+#### `pix sync --from-host`
+
+Copies the host repository into the VM. If the repository is not registered yet, this command registers it first.
 
 The current implementation copies Git-tracked files and also untracked, non-ignored files from the host working tree. This is intentionally documented here because it is more permissive than the stricter committed/tracked-only model the project may move toward.
 
@@ -86,25 +92,29 @@ If the VM worktree contains unexported changes, `pix` requires `--force` before 
 pix sync --from-host --force
 ```
 
-### `pix new`
-
-Starts a new Pi session inside the VM worktree for the current repository.
-
-### `pix resume` or `pix`
-
-Resumes a Pi session inside the VM. Running `pix` with no arguments is equivalent to `pix resume`.
-
-### `pix sync`
+#### `pix sync`
 
 Imports commits produced by Pi from the VM bridge repository into the host repository.
 
 The host worktree must be clean before syncing from the VM back to the host. If Pi has not committed and pushed anything to the bridge, there is nothing to import.
 
-### `pix ssh`
+### Pi sessions
+
+#### `pix new`
+
+Starts a new Pi session inside the VM worktree for the current repository.
+
+#### `pix resume` or `pix`
+
+Resumes a Pi session inside the VM. Running `pix` with no arguments is equivalent to `pix resume`.
+
+#### `pix ssh`
 
 Opens a root shell inside the VM worktree for the current repository.
 
-### `pix vm reset --yes`
+### VM lifecycle
+
+#### `pix vm reset --yes`
 
 Destroys and recreates the global `pix` VM. It does not touch host repositories, host files, host `.env` files, or host SSH keys, but it removes VM-side toolchains, caches, SDKs, repository copies, bridge repositories, and guest configuration changes.
 
