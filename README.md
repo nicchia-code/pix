@@ -2,9 +2,51 @@
 
 `pix` e una CLI in Go che esegue Pi dentro una VM Linux persistente e isolata dall'host.
 
-L'obiettivo del progetto e semplice: lasciare a Pi piena liberta dentro una macchina sacrificabile, ma impedire che possa leggere o modificare direttamente il filesystem e i secret dell'host.
+## In breve
 
-Flusso tipico:
+`pix` serve a dare a Pi un posto dove lavorare con liberta, senza dargli accesso diretto alla macchina su cui stai davvero sviluppando.
+
+L'idea e semplice: invece di far lavorare Pi nel repository host, `pix` copia il progetto dentro una VM, lascia che Pi operi li dentro e riporta fuori solo i risultati tramite Git. In questo modo il progetto resta utilizzabile come una normale CLI, ma il confine di sicurezza e molto piu chiaro.
+
+Se dovessi riassumerlo in una frase: `pix` prova a rendere comodo un workflow in cui Pi puo fare molto dentro una macchina sacrificabile, ma puo toccare molto meno dell'host.
+
+## Le scelte che contano
+
+Per spiegare come funziona `pix` senza trasformare il README in un diario di implementazione, conviene guardare le decisioni chiave.
+
+### Il repository host non viene montato nella VM
+
+Problema: se Pi lavora direttamente sul filesystem host, un errore o un comando troppo aggressivo puo toccare file, configurazioni e secret che non fanno parte del progetto.
+
+Scelta: `pix` non monta il repo host nella VM. Copia invece il repository dentro un worktree interno alla VM e tratta quella copia come unica area modificabile da Pi.
+
+Effetto: la superficie di rischio si riduce molto, perche tra host e VM non c'e scrittura diretta sul progetto reale.
+
+### Le modifiche tornano indietro tramite Git
+
+Problema: anche se la VM e isolata, serve comunque un modo affidabile per riportare fuori il lavoro svolto da Pi.
+
+Scelta: dentro la VM `pix` mantiene un bare repository di bridge. Pi salva li i commit prodotti nella sessione e l'host li importa con `pix sync`.
+
+Effetto: il passaggio VM -> host resta esplicito, ispezionabile e coerente con strumenti che gli sviluppatori conoscono gia.
+
+### La VM e persistente, ma sacrificabile
+
+Problema: ricreare ogni volta l'ambiente completo sarebbe lento; tenere tutto sull'host sarebbe comodo ma troppo permissivo.
+
+Scelta: `pix` usa una VM persistente per macchina e utente, dentro cui vivono toolchain, cache e copie dei repository registrati.
+
+Effetto: le sessioni restano rapide da riprendere, ma se qualcosa si rompe si puo sempre azzerare tutto con `pix vm reset --yes` senza toccare i repository host.
+
+### Pi gira con molta liberta, ma nel posto giusto
+
+Problema: limitare troppo Pi lo rende poco utile; lasciarlo libero sull'host lo rende troppo rischioso.
+
+Scelta: Pi gira come `root` dentro la VM, con accesso internet e con un contesto preparato dalla CLI, ma senza mount del filesystem host, senza `~/.ssh` host e senza `ssh-agent` host.
+
+Effetto: `pix` sposta la domanda da "come blocco ogni singolo comando?" a "in quale ambiente gli permetto di eseguirli?".
+
+## Flusso tipico
 
 ```bash
 pix install
@@ -13,16 +55,12 @@ pix new
 pix sync
 ```
 
-## Idea in 30 secondi
+In pratica:
 
-Con `pix` il repository non viene montato nella VM. Invece:
-
-1. il repo host viene copiato nella VM;
-2. Pi lavora dentro la copia VM come `root`;
-3. Pi salva il risultato in un bare repo Git interno alla VM;
-4. l'host importa i commit con `pix sync`.
-
-Questo riduce il rischio che errori di Pi danneggino il sistema host.
+1. `pix install` prepara stato locale, immagine e accesso alla VM;
+2. `pix sync --from-host` copia il repository host nella VM;
+3. `pix new` avvia Pi nel worktree VM;
+4. `pix sync` importa nell'host i commit prodotti dentro la VM.
 
 ## Cosa promette il progetto
 
@@ -31,8 +69,8 @@ Questo riduce il rischio che errori di Pi danneggino il sistema host.
 - una sola VM persistente per macchina/utente;
 - Pi gira come `root` dentro la VM;
 - la VM ha internet libero;
-- la VM non deve montare il filesystem host;
-- la VM non deve ricevere secret host, `~/.ssh` host o `ssh-agent` host;
+- la VM non monta il filesystem host;
+- la VM non riceve secret host, `~/.ssh` host o `ssh-agent` host;
 - il passaggio delle modifiche tra host e VM avviene tramite Git bridge, non tramite scrittura diretta sul repo host.
 
 Importante: l'isolamento promesso e tra VM e host, non tra repository diversi dentro la stessa VM.
