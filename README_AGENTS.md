@@ -1,6 +1,6 @@
 # README_AGENTS
 
-This file explains `pix` to an agent that needs to read or modify this repository.
+This file explains `pix` to an agent that needs to read or modify this repository. Read `DESIGN.md` for the technical decisions and boundaries that replaced the old standalone specification.
 
 ## Project purpose
 
@@ -190,12 +190,13 @@ If the answer is yes, treat the change as architectural rather than a simple ref
 To understand the project quickly, read in this order:
 
 1. `README.md`
-2. `internal/pix/app.go`
-3. `internal/pix/config.go`
-4. `internal/pix/git.go`
-5. `internal/pix/vm.go`
-6. the relevant backend file: `internal/pix/vm_darwin.go` or `internal/pix/vm_wsl_linux.go`
-7. `internal/pix/pi_local.go`
+2. `DESIGN.md`
+3. `internal/pix/app.go`
+4. `internal/pix/config.go`
+5. `internal/pix/git.go`
+6. `internal/pix/vm.go`
+7. the relevant backend file: `internal/pix/vm_darwin.go` or `internal/pix/vm_wsl_linux.go`
+8. `internal/pix/pi_local.go`
 
 ## Build and test
 
