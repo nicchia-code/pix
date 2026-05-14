@@ -1,52 +1,52 @@
 # pix
 
-`pix` e una CLI in Go che esegue Pi dentro una VM Linux persistente e isolata dall'host.
+`pix` is a Go CLI that runs Pi inside a persistent Linux VM isolated from the host machine.
 
-## In breve
+## At a glance
 
-`pix` serve a dare a Pi un posto dove lavorare con liberta, senza dargli accesso diretto alla macchina su cui stai davvero sviluppando.
+`pix` gives Pi a place where it can work freely without giving it direct access to the machine you actually develop on.
 
-L'idea e semplice: invece di far lavorare Pi nel repository host, `pix` copia il progetto dentro una VM, lascia che Pi operi li dentro e riporta fuori solo i risultati tramite Git. In questo modo il progetto resta utilizzabile come una normale CLI, ma il confine di sicurezza e molto piu chiaro.
+The idea is simple: instead of letting Pi operate inside the host repository, `pix` copies the project into a VM, lets Pi work there, and brings the result back through Git. You still get a familiar CLI workflow, but with a much clearer safety boundary.
 
-Se dovessi riassumerlo in una frase: `pix` prova a rendere comodo un workflow in cui Pi puo fare molto dentro una macchina sacrificabile, ma puo toccare molto meno dell'host.
+In one sentence: `pix` makes it practical to let Pi do a lot inside a disposable machine, while letting it touch far less of the host.
 
-## Le scelte che contano
+## The decisions that matter
 
-Per spiegare come funziona `pix` senza trasformare il README in un diario di implementazione, conviene guardare le decisioni chiave.
+The easiest way to understand how `pix` works is not to walk through every implementation detail. It is to look at the design choices that shape the project.
 
-### Il repository host non viene montato nella VM
+### The host repository is not mounted into the VM
 
-Problema: se Pi lavora direttamente sul filesystem host, un errore o un comando troppo aggressivo puo toccare file, configurazioni e secret che non fanno parte del progetto.
+Problem: if Pi works directly on the host filesystem, a bad command can reach files, configuration, caches, and secrets that are not part of the task.
 
-Scelta: `pix` non monta il repo host nella VM. Copia invece il repository dentro un worktree interno alla VM e tratta quella copia come unica area modificabile da Pi.
+Choice: `pix` does not mount the host repository into the VM. Instead, it creates a VM-side working copy and treats that copy as the only place where Pi should make changes.
 
-Effetto: la superficie di rischio si riduce molto, perche tra host e VM non c'e scrittura diretta sul progetto reale.
+Result: the risky part of the workflow moves into an isolated environment. Pi can still inspect and modify the project copy, but it is not writing directly to the real host checkout.
 
-### Le modifiche tornano indietro tramite Git
+### Changes come back through Git
 
-Problema: anche se la VM e isolata, serve comunque un modo affidabile per riportare fuori il lavoro svolto da Pi.
+Problem: isolation is useful only if there is still a reliable way to bring the work back to the host.
 
-Scelta: dentro la VM `pix` mantiene un bare repository di bridge. Pi salva li i commit prodotti nella sessione e l'host li importa con `pix sync`.
+Choice: each registered repository has a bare Git repository inside the VM. Pi commits to the VM worktree and pushes to that internal bridge. The host imports those commits with `pix sync`.
 
-Effetto: il passaggio VM -> host resta esplicito, ispezionabile e coerente con strumenti che gli sviluppatori conoscono gia.
+Result: the VM-to-host boundary stays explicit, inspectable, and based on tooling developers already understand.
 
-### La VM e persistente, ma sacrificabile
+### The VM is persistent, but disposable
 
-Problema: ricreare ogni volta l'ambiente completo sarebbe lento; tenere tutto sull'host sarebbe comodo ma troppo permissivo.
+Problem: recreating a full development environment for every session would be slow, but giving Pi direct access to the host would be too permissive.
 
-Scelta: `pix` usa una VM persistente per macchina e utente, dentro cui vivono toolchain, cache e copie dei repository registrati.
+Choice: `pix` uses one persistent VM per user/machine. Toolchains, SDKs, caches, and VM-side repository copies live there across sessions.
 
-Effetto: le sessioni restano rapide da riprendere, ma se qualcosa si rompe si puo sempre azzerare tutto con `pix vm reset --yes` senza toccare i repository host.
+Result: Pi can reuse expensive setup work, while the whole environment can still be reset with `pix vm reset --yes` if it gets broken.
 
-### Pi gira con molta liberta, ma nel posto giusto
+### Pi gets freedom in the right place
 
-Problema: limitare troppo Pi lo rende poco utile; lasciarlo libero sull'host lo rende troppo rischioso.
+Problem: if Pi is too constrained, it becomes much less useful. If it is unrestricted on the host, it becomes too risky.
 
-Scelta: Pi gira come `root` dentro la VM, con accesso internet e con un contesto preparato dalla CLI, ma senza mount del filesystem host, senza `~/.ssh` host e senza `ssh-agent` host.
+Choice: Pi runs as `root` inside the VM, with network access and a prepared context, but without host filesystem mounts, host `~/.ssh`, or host `ssh-agent` forwarding.
 
-Effetto: `pix` sposta la domanda da "come blocco ogni singolo comando?" a "in quale ambiente gli permetto di eseguirli?".
+Result: the project focuses less on blocking individual commands and more on choosing the right environment in which those commands are allowed to run.
 
-## Flusso tipico
+## Typical workflow
 
 ```bash
 pix install
@@ -55,29 +55,58 @@ pix new
 pix sync
 ```
 
-In pratica:
+In practice:
 
-1. `pix install` prepara stato locale, immagine e accesso alla VM;
-2. `pix sync --from-host` copia il repository host nella VM;
-3. `pix new` avvia Pi nel worktree VM;
-4. `pix sync` importa nell'host i commit prodotti dentro la VM.
+1. `pix install` prepares local state, the VM image, and SSH access;
+2. `pix sync --from-host` copies the host repository into the VM;
+3. `pix new` starts Pi inside the VM-side worktree;
+4. `pix sync` imports the commits produced inside the VM back into the host repository.
 
-## Cosa promette il progetto
+Running `pix` with no arguments is equivalent to `pix resume`.
 
-`pix` prova a garantire queste proprieta:
+## Security model
 
-- una sola VM persistente per macchina/utente;
-- Pi gira come `root` dentro la VM;
-- la VM ha internet libero;
-- la VM non monta il filesystem host;
-- la VM non riceve secret host, `~/.ssh` host o `ssh-agent` host;
-- il passaggio delle modifiche tra host e VM avviene tramite Git bridge, non tramite scrittura diretta sul repo host.
+Pi is not assumed to be intentionally malicious, but it is allowed to make mistakes.
 
-Importante: l'isolamento promesso e tra VM e host, non tra repository diversi dentro la stessa VM.
+Inside the VM, these mistakes are acceptable:
 
-## Architettura
+```bash
+rm -rf /
+apt install ...
+modify /etc
+break a VM-side worktree
+break a VM-side bridge.git
+break installed toolchains
+```
 
-Ogni macchina ha una VM globale persistente. Dentro la VM vivono tutti i repository registrati:
+Those mistakes must stay inside the VM.
+
+Pi must not be able to:
+
+- read the host home directory;
+- mount host directories;
+- read host `.env` files;
+- read host API keys;
+- access host `~/.ssh`;
+- use the host `ssh-agent`;
+- modify host files directly;
+- push through a host Git remote or host credentials;
+- depend on host secrets to work.
+
+Pi may:
+
+- run as `root` inside the VM;
+- access the internet from inside the VM;
+- modify any file inside the VM;
+- install SDKs, package managers, toolchains, and caches;
+- modify VM-side copies of repositories;
+- commit and push to the internal VM bridge repository.
+
+The key promise is VM-to-host isolation. `pix` does not promise isolation between different repositories inside the same VM.
+
+## Architecture
+
+Each machine has one global persistent VM. All registered repositories live inside that VM:
 
 ```text
 /var/lib/pix/
@@ -87,108 +116,247 @@ Ogni macchina ha una VM globale persistente. Dentro la VM vivono tutti i reposit
       bridge.git/
 ```
 
-Sul lato host `pix` mantiene stato in `~/.pix/`, per esempio:
+For each repository:
+
+- `worktree/` is the editable copy Pi works on;
+- `bridge.git/` is a bare Git repository used as the bridge back to the host;
+- the VM worktree remote named `origin` points to the internal `bridge.git`, not to GitHub, GitLab, the host filesystem, or an external remote.
+
+On the host, `pix` keeps global state under `~/.pix/`, for example:
 
 ```text
 ~/.pix/
   images/
+    base-lts.img
   vm/
     default/
+      disk.qcow2
       state.json
       ssh/
+        id_ed25519
+        id_ed25519.pub
+        known_hosts
   logs/
 ```
 
-Per ogni clone locale registrato, `pix` salva metadata non versionati in:
+For each registered local checkout, `pix` stores non-versioned metadata in:
 
 ```text
 .git/pix/config.json
 ```
 
-## Comandi principali
+That file maps the host checkout to its VM-side repository. It is local metadata and should not be committed.
+
+## Git bridge model
+
+Git is the only supported bridge between host and VM.
+
+Host to VM:
+
+```bash
+pix sync --from-host
+```
+
+Pi inside the VM:
+
+```bash
+cd /var/lib/pix/repos/<repo_id>/worktree
+git add -A
+git commit -m "..."
+git push origin pi-result
+```
+
+VM to host:
+
+```bash
+pix sync
+```
+
+`pix sync` does not create commits for Pi. It does not run `git add`, `git commit`, or `git push` inside the VM. Pi is responsible for committing and pushing to the internal bridge.
+
+The official bridge branch is:
+
+```text
+pi-result
+```
+
+If a sync from the VM brings back the wrong result, rollback is normal Git work on the host:
+
+```bash
+git reset --hard HEAD~1
+git reflog
+git reset --hard <sha>
+```
+
+## Main commands
 
 ### `pix install`
 
-Inizializza lo stato host, prepara il backend VM corretto per la piattaforma, genera la chiave SSH gestita da `pix`, scarica l'immagine base Ubuntu LTS se necessario e verifica che la VM sia raggiungibile.
+Initializes or verifies host-side state, prepares the right VM backend for the platform, generates the SSH key managed by `pix`, downloads the Ubuntu LTS base image when needed, creates the persistent disk when needed, configures guest SSH, and verifies that the VM is reachable.
+
+The command is intended to be idempotent. Running it multiple times should be safe.
 
 ### `pix sync --from-host`
 
-Registra il repo corrente se necessario e sincronizza il progetto host dentro la VM.
+Registers the current repository if needed and synchronizes the host project into the VM.
 
-Oggi l'implementazione copia nella VM i file Git tracked e anche i file untracked non ignorati presenti nel working tree host. Questo e piu permissivo della direzione raccomandata nella spec, che punta a un flusso piu stretto basato solo su stato committed/tracked.
+The current implementation copies Git-tracked files and also untracked, non-ignored files from the host working tree. This is intentionally documented here because it is more permissive than the stricter committed/tracked-only model the project may move toward.
 
-Se il worktree VM contiene modifiche non esportate, `pix` chiede `--force` prima di sovrascriverlo.
+If the VM worktree contains unexported changes, `pix` requires `--force` before overwriting it:
+
+```bash
+pix sync --from-host --force
+```
 
 ### `pix new`
 
-Avvia una nuova sessione Pi dentro il worktree VM del repo corrente.
+Starts a new Pi session inside the VM worktree for the current repository.
 
-### `pix resume` oppure `pix`
+### `pix resume` or `pix`
 
-Riprende una sessione Pi esistente dentro la VM.
+Resumes a Pi session inside the VM. Running `pix` with no arguments is equivalent to `pix resume`.
 
 ### `pix sync`
 
-Importa nell'host i commit prodotti da Pi nel bridge Git interno alla VM.
+Imports commits produced by Pi from the VM bridge repository into the host repository.
 
-Il repo host deve essere pulito prima della sync VM -> host.
+The host worktree must be clean before syncing from the VM back to the host. If Pi has not committed and pushed anything to the bridge, there is nothing to import.
 
 ### `pix ssh`
 
-Apre una shell root dentro il worktree VM del repo corrente.
+Opens a root shell inside the VM worktree for the current repository.
 
 ### `pix vm reset --yes`
 
-Distrugge e ricrea completamente la VM globale `pix`. Non tocca i repository host, ma elimina toolchain, cache e copie VM dei repo.
+Destroys and recreates the global `pix` VM. It does not touch host repositories, host files, host `.env` files, or host SSH keys, but it removes VM-side toolchains, caches, SDKs, repository copies, bridge repositories, and guest configuration changes.
 
-## Backend supportati
+Reset is always explicit. It must not happen implicitly during install or update.
 
-`pix` sceglie il backend in base alla piattaforma:
+## Supported platforms and backends
+
+`pix` supports UNIX-like environments:
+
+- macOS;
+- Linux;
+- Windows through WSL2.
+
+Native Windows, PowerShell, and CMD are not primary targets.
+
+`pix` chooses the VM backend based on the platform:
 
 - macOS: Apple `Virtualization.framework`;
-- Linux: QEMU, con KVM se disponibile;
-- WSL2: appliance/distro dedicata con hardening specifico.
+- Linux: QEMU, with KVM when available and software emulation fallback when needed;
+- WSL2: a dedicated appliance/distro with additional hardening.
 
-L'interfaccia verso la VM rimane uniforme: SSH locale gestito dalla CLI.
+The interface to the VM stays the same across platforms: SSH managed by the CLI.
 
-## Integrazione con Pi
+## SSH rules
 
-Quando lanci Pi tramite `pix`, la CLI:
+The VM is accessed through SSH managed by `pix`.
 
-- installa Pi nella VM se non e presente;
-- sincronizza alcune customizzazioni locali di Pi nella VM;
-- inietta un'estensione che ricorda a Pi di lavorare solo dentro la VM e di pubblicare il risultato con Git verso `origin` sul branch `pi-result`.
+The intended rules are:
 
-In pratica Pi tratta il worktree VM come unica copia modificabile del progetto.
+- no user private keys inside the VM;
+- no host `ssh-agent` forwarding;
+- no host `~/.ssh` mount;
+- no password login;
+- no root password login;
+- no SSH exposure on `0.0.0.0`.
 
-## Build e test
+Recommended guest SSH posture:
 
-Build locale:
+```sshconfig
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AllowAgentForwarding no
+AllowTcpForwarding no
+X11Forwarding no
+PermitTunnel no
+PermitUserEnvironment no
+```
+
+## File sync and secrets
+
+The project is designed so host secrets do not enter the VM.
+
+Do not copy host credentials such as:
+
+- `.env` files;
+- API keys from the host environment;
+- cloud credentials;
+- GitHub or GitLab tokens;
+- `~/.ssh`;
+- `~/.config/gh`;
+- `~/.aws`;
+- `~/.docker/config.json`;
+- keychain data;
+- `ssh-agent` sockets.
+
+If secret access inside the VM is ever needed, it should be designed as a separate, explicit feature.
+
+## Updates
+
+There are three separate update layers:
+
+1. the host CLI binary, `pix`;
+2. the base Ubuntu LTS image used for new or reset VMs;
+3. Pi inside the VM.
+
+Updating the CLI must not reset, replace, or migrate the existing VM implicitly.
+
+The base image is selected by the code. Existing VMs are not automatically rebuilt when the CLI changes. A new base image only affects newly created or explicitly reset VMs.
+
+## Pi integration
+
+When Pi is launched through `pix`, the CLI:
+
+- installs Pi inside the VM if it is not already available;
+- synchronizes selected local Pi customizations into the VM;
+- injects a Pi extension that reminds the agent to work only inside the VM and to publish the final result with Git to `origin` on the `pi-result` branch.
+
+In practice, Pi treats the VM worktree as the only editable copy of the project.
+
+## Non-goals
+
+The initial design intentionally does not include:
+
+- API key brokering;
+- untracked-file sync as a long-term guarantee;
+- `.env` management inside the VM;
+- automatic test execution with host secrets;
+- isolation between repositories inside the same VM;
+- snapshots;
+- CLI-level rollback;
+- one VM per repository;
+- Docker as a required backend;
+- native Windows support outside WSL2.
+
+## Build and test
+
+Build locally:
 
 ```bash
 make build
 ```
 
-Test:
+Run tests:
 
 ```bash
 make test
 ```
 
-Serve una toolchain Go disponibile nel `PATH`.
+A Go toolchain must be available in `PATH`.
 
-## Stato del progetto
+## Code to read first
 
-Il repository e gia una buona implementazione della visione descritta in `SPEC.md`, ma ci sono ancora alcuni dettagli da allineare o chiarire. Il punto piu importante oggi e che `pix sync --from-host` e piu permissivo della semantica raccomandata dalla spec.
+If you want to get oriented quickly, start here:
 
-## Codice da leggere per primo
-
-Se vuoi orientarti rapidamente:
-
-- `SPEC.md`: obiettivi, threat model e invarianti;
-- `internal/pix/app.go`: comandi CLI e flussi principali;
-- `internal/pix/vm.go`: provisioning VM, SSH, immagini, backend comuni;
-- `internal/pix/vm_darwin.go`: backend macOS;
-- `internal/pix/vm_wsl_linux.go`: backend WSL2;
-- `internal/pix/git.go`: registrazione repo e sincronizzazione host/VM;
-- `internal/pix/pi_local.go`: integrazione e prompt/context di Pi.
+- `internal/pix/app.go`: CLI commands and main flows;
+- `internal/pix/config.go`: host state and repository metadata;
+- `internal/pix/git.go`: repository registration and host/VM sync;
+- `internal/pix/vm.go`: VM provisioning, SSH, images, and common backend logic;
+- `internal/pix/vm_darwin.go`: macOS backend;
+- `internal/pix/vm_wsl_linux.go`: WSL2 backend;
+- `internal/pix/pi_local.go`: Pi integration and VM-specific context.
