@@ -59,11 +59,15 @@ func (v VM) ensureWSL2Appliance(ctx context.Context, root, statePath string) err
 			}
 			state.WSLRootFS = path
 		}
-		rootfsWin, err := wslpathWindows(ctx, v.runner, state.WSLRootFS)
+		rootfsWin, err := importableWSLRootFS(ctx, v.runner, state.WSLRootFS)
 		if err != nil {
 			return err
 		}
-		if err := ensureWindowsDir(ctx, v.runner, filepath.Dir(state.WSLInstallLocation)); err != nil {
+		installParent, err := windowsPathDir(state.WSLInstallLocation)
+		if err != nil {
+			return err
+		}
+		if err := ensureWindowsDir(ctx, v.runner, installParent); err != nil {
 			return err
 		}
 		_, _, err = v.runner.Run(ctx, "", nil, "wsl.exe", "--import", state.WSLDistro, state.WSLInstallLocation, rootfsWin, "--version", "2")
@@ -144,8 +148,9 @@ sed -i 's/^#\?AllowAgentForwarding .*/AllowAgentForwarding no/' /etc/ssh/sshd_co
 sed -i 's/^#\?AllowTcpForwarding .*/AllowTcpForwarding no/' /etc/ssh/sshd_config
 printf '\nexport PATH="/root/.local/share/pi-node/current/bin:/root/.local/bin:/root/.pi/bin:$PATH"\n' >/etc/profile.d/pix-pi.sh
 `
-	if _, _, err := r.Run(ctx, "", nil, "wsl.exe", "-d", distro, "--user", "root", "--", "sh", "-lc", script); err != nil {
-		return fmt.Errorf("configurazione appliance WSL pix: %w", err)
+	stdout, stderr, err := r.Run(ctx, "", nil, "wsl.exe", "-d", distro, "--user", "root", "--", "sh", "-lc", script)
+	if err != nil {
+		return fmt.Errorf("configurazione appliance WSL pix: %w", conciseCommandError(err, stdout, stderr))
 	}
 	_, _, _ = r.Run(ctx, "", nil, "wsl.exe", "--terminate", distro)
 	return nil
@@ -163,35 +168,35 @@ chmod 700 /root/.ssh
 cat >/root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 `
-	_, _, err = r.Run(ctx, "", pubKey, "wsl.exe", "-d", distro, "--user", "root", "--", "sh", "-lc", script)
+	stdout, stderr, err := r.Run(ctx, "", pubKey, "wsl.exe", "-d", distro, "--user", "root", "--", "sh", "-lc", script)
 	if err != nil {
-		return fmt.Errorf("installazione chiave SSH appliance WSL pix: %w", err)
+		return fmt.Errorf("installazione chiave SSH appliance WSL pix: %w", conciseCommandError(err, stdout, stderr))
 	}
 	return nil
 }
 
 func startWSLSSHD(ctx context.Context, r commandRunner, distro string) error {
 	script := `set -eu
-if findmnt -rn -o TARGET | grep -Eq '^/mnt(/|$)'; then
-  echo "pix appliance WSL non hardenizzata: /mnt risulta montato" >&2
-  exit 1
-fi
-if [ -d /mnt ] && find /mnt -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
-  echo "pix appliance WSL non hardenizzata: /mnt contiene filesystem host" >&2
+if findmnt -rn -o TARGET | { while read -r target; do
+  case "$target" in
+    /mnt|/mnt/*)
+      case "$target" in
+        /mnt/wsl|/mnt/wsl/*|/mnt/wslg|/mnt/wslg/*) ;;
+        *) exit 0 ;;
+      esac
+      ;;
+  esac
+done; exit 1; }; then
+  echo "pix appliance WSL non hardenizzata: filesystem host montato sotto /mnt" >&2
   exit 1
 fi
 mkdir -p /run/sshd /root/.ssh
 chmod 700 /root/.ssh
 /usr/sbin/sshd || true
-export PATH="/root/.local/share/pi-node/current/bin:/root/.local/bin:/root/.pi/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-if ! command -v pi >/dev/null 2>&1; then
-  curl -fsSL https://pi.dev/install.sh | sh
-  ln -sf /root/.local/share/pi-node/current/bin/pi /usr/local/bin/pi || true
-fi
 `
-	_, _, err := r.Run(ctx, "", nil, "wsl.exe", "-d", distro, "--user", "root", "--", "sh", "-lc", script)
+	stdout, stderr, err := r.Run(ctx, "", nil, "wsl.exe", "-d", distro, "--user", "root", "--", "sh", "-lc", script)
 	if err != nil {
-		return fmt.Errorf("avvio sshd appliance WSL pix: %w", err)
+		return fmt.Errorf("avvio sshd appliance WSL pix: %w", conciseCommandError(err, stdout, stderr))
 	}
 	return nil
 }
@@ -209,6 +214,14 @@ func wslDistroIP(ctx context.Context, r commandRunner, distro string) (string, e
 }
 
 func defaultWSLInstallLocation(ctx context.Context, r commandRunner, distro string) (string, error) {
+	base, err := windowsLocalAppData(ctx, r)
+	if err != nil {
+		return "", err
+	}
+	return base + `\pix\wsl\` + distro, nil
+}
+
+func windowsLocalAppData(ctx context.Context, r commandRunner) (string, error) {
 	stdout, _, err := r.Run(ctx, "", nil, "cmd.exe", "/c", "echo", "%LOCALAPPDATA%")
 	if err != nil {
 		return "", userError("Non riesco a leggere %LOCALAPPDATA% via cmd.exe. pix su WSL richiede interop Windows nella distro di controllo per creare l'appliance dedicata.")
@@ -217,17 +230,55 @@ func defaultWSLInstallLocation(ctx context.Context, r commandRunner, distro stri
 	if base == "" || strings.Contains(base, "%LOCALAPPDATA%") {
 		return "", userError("%LOCALAPPDATA% Windows non disponibile per installare l'appliance WSL pix.")
 	}
-	return base + `\pix\wsl\` + distro, nil
+	return base, nil
+}
+
+func importableWSLRootFS(ctx context.Context, r commandRunner, path string) (string, error) {
+	rootfsWin, err := wslpathWindows(ctx, r, path)
+	if err != nil {
+		return "", err
+	}
+	if !isWindowsUNCPath(rootfsWin) {
+		return rootfsWin, nil
+	}
+
+	localAppData, err := windowsLocalAppData(ctx, r)
+	if err != nil {
+		return "", err
+	}
+	imagesDir := localAppData + `\pix\images`
+	if err := ensureWindowsDir(ctx, r, imagesDir); err != nil {
+		return "", fmt.Errorf("creazione directory immagini WSL Windows: %w", err)
+	}
+	dst := imagesDir + `\` + filepath.Base(path)
+	cmd := "Copy-Item -Force -Path " + psQuote(rootfsWin) + " -Destination " + psQuote(dst)
+	if _, _, err := r.Run(ctx, "", nil, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", cmd); err != nil {
+		return "", fmt.Errorf("copia rootfs WSL su filesystem Windows: %w", err)
+	}
+	return dst, nil
+}
+
+func isWindowsUNCPath(path string) bool {
+	return strings.HasPrefix(path, `\\`)
+}
+
+func windowsPathDir(path string) (string, error) {
+	path = strings.TrimRight(path, `\`)
+	idx := strings.LastIndex(path, `\`)
+	if idx <= 0 {
+		return "", userError("Path Windows non valido: " + path)
+	}
+	return path[:idx], nil
 }
 
 func ensureWindowsDir(ctx context.Context, r commandRunner, path string) error {
-	cmd := fmt.Sprintf("if not exist %s mkdir %s", cmdQuote(path), cmdQuote(path))
-	_, _, err := r.Run(ctx, "", nil, "cmd.exe", "/c", cmd)
+	cmd := "New-Item -ItemType Directory -Force -Path " + psQuote(path) + " | Out-Null"
+	_, _, err := r.Run(ctx, "", nil, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", cmd)
 	return err
 }
 
-func cmdQuote(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
+func psQuote(s string) string {
+	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
 }
 
 func wslpathWindows(ctx context.Context, r commandRunner, path string) (string, error) {

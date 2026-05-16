@@ -665,6 +665,9 @@ func (s *SSH) args(script string) []string {
 	args := []string{
 		"-p", strconv.Itoa(s.port),
 		"-i", s.keyPath,
+		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=5",
+		"-o", "ConnectionAttempts=1",
 		"-o", "IdentitiesOnly=yes",
 		"-o", "IdentityAgent=none",
 		"-o", "ForwardAgent=no",

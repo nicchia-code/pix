@@ -53,6 +53,26 @@ func TestDefaultDiskFile(t *testing.T) {
 	}
 }
 
+func TestIsWindowsUNCPath(t *testing.T) {
+	if !isWindowsUNCPath(`\\wsl.localhost\Ubuntu\home\luca\.pix\images\rootfs.tar.gz`) {
+		t.Fatal("expected WSL UNC path to be detected")
+	}
+	if isWindowsUNCPath(`C:\Users\User01\AppData\Local\pix\images\rootfs.tar.gz`) {
+		t.Fatal("did not expect local Windows path to be detected as UNC")
+	}
+}
+
+func TestWindowsPathDir(t *testing.T) {
+	got, err := windowsPathDir(`C:\Users\User01\AppData\Local\pix\wsl\pix-default`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `C:\Users\User01\AppData\Local\pix\wsl`
+	if got != want {
+		t.Fatalf("dir = %q, want %q", got, want)
+	}
+}
+
 func TestParseSizeBytes(t *testing.T) {
 	got, err := parseSizeBytes("40G")
 	if err != nil {

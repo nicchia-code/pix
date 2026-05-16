@@ -65,10 +65,12 @@ func (a *App) runSync(ctx context.Context, args []string) error {
 		fmt.Fprintf(a.out, "Repo registrato automaticamente: %s\n", cfg.RepoID)
 	}
 	vm := newVM(r)
+	fmt.Fprintln(a.err, "Preparazione VM pix...")
 	ssh, err := vm.ensureReady(ctx)
 	if err != nil {
 		return err
 	}
+	fmt.Fprintln(a.err, "Verifica repo nella VM...")
 	if err := ensureVMRepo(ctx, ssh, cfg); err != nil {
 		return err
 	}
@@ -81,6 +83,7 @@ func (a *App) runSync(ctx context.Context, args []string) error {
 			return userError(fmt.Sprintf("Questo comando sovrascriverà la copia del repo dentro la VM.\n\nEventuali modifiche presenti in:\n  %s\n\nandranno perse se non sono già state portate fuori.\n\nUsa:\n  pix sync --from-host --force\n\nper continuare.", cfg.WorktreePath))
 		}
 	}
+	fmt.Fprintln(a.err, "Sincronizzazione repo nella VM...")
 	if err := syncGitRepoToVM(ctx, r, root, ssh, cfg); err != nil {
 		return err
 	}

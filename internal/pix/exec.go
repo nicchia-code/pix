@@ -28,7 +28,14 @@ func (osRunner) Run(ctx context.Context, dir string, input []byte, name string, 
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		return stdout.Bytes(), stderr.Bytes(), fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		output := strings.TrimSpace(stderr.String())
+		if out := strings.TrimSpace(stdout.String()); out != "" {
+			if output != "" {
+				output += "\n"
+			}
+			output += out
+		}
+		return stdout.Bytes(), stderr.Bytes(), fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, output)
 	}
 	return stdout.Bytes(), stderr.Bytes(), nil
 }
@@ -55,4 +62,24 @@ func commandText(ctx context.Context, r commandRunner, dir, name string, args ..
 		return "", err
 	}
 	return strings.TrimSpace(string(stdout)), nil
+}
+
+func conciseCommandError(err error, stdout, stderr []byte) error {
+	status := "comando fallito"
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		status = "comando terminato con exit status " + strconv.Itoa(exitErr.ExitCode())
+	}
+
+	output := strings.TrimSpace(string(stderr))
+	if out := strings.TrimSpace(string(stdout)); out != "" {
+		if output != "" {
+			output += "\n"
+		}
+		output += out
+	}
+	if output == "" {
+		return errors.New(status)
+	}
+	return errors.New(status + "\n" + output)
 }
