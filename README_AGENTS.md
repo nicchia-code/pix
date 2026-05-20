@@ -81,7 +81,7 @@ The operational order is usually host -> VM, then Pi execution, then VM -> host.
 - blocks if the VM worktree is dirty and `--force` is not provided;
 - updates the VM bridge and VM worktree.
 
-Important current behavior: `gitWorktreeTar()` includes untracked, non-ignored files and uncommitted tracked changes. Do not assume host-to-VM sync is committed/tracked-only unless the implementation is changed deliberately.
+Important current behavior: `gitWorktreeTar()` includes untracked, non-ignored files and uncommitted tracked changes. It also honors a repository-root `.pixcontext` file: patterns in that file use Git ignore syntax as an allow-list for extra untracked files to copy even when `.gitignore` would exclude them. Host-to-VM sync appends `.pixcontext` patterns to the VM worktree's `.git/info/exclude` so these context-only files are not picked up by a normal `git add -A`. Do not assume host-to-VM sync is committed/tracked-only unless the implementation is changed deliberately.
 
 `pix sync`:
 

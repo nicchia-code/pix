@@ -79,17 +79,13 @@ func gitHasHead(ctx context.Context, r commandRunner, root string) (bool, error)
 }
 
 func gitWorktreeTar(ctx context.Context, r commandRunner, root string) ([]byte, error) {
-	stdout, _, err := r.Run(ctx, root, nil, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	paths, err := gitWorktreePaths(ctx, r, root)
 	if err != nil {
 		return nil, err
 	}
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	paths := strings.Split(string(stdout), "\x00")
 	for _, rel := range paths {
-		if rel == "" {
-			continue
-		}
 		if err := addPathToTar(tw, root, rel); err != nil {
 			_ = tw.Close()
 			return nil, err
@@ -99,6 +95,70 @@ func gitWorktreeTar(ctx context.Context, r commandRunner, root string) ([]byte, 
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func gitWorktreePaths(ctx context.Context, r commandRunner, root string) ([]string, error) {
+	stdout, _, err := r.Run(ctx, root, nil, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	paths := splitNULTerminated(stdout)
+	seen := make(map[string]struct{}, len(paths))
+	result := make([]string, 0, len(paths))
+	for _, rel := range paths {
+		addUniquePath(&result, seen, rel)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".pixcontext")); err == nil {
+		addUniquePath(&result, seen, ".pixcontext")
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	extra, err := pixContextPaths(ctx, r, root)
+	if err != nil {
+		return nil, err
+	}
+	for _, rel := range extra {
+		addUniquePath(&result, seen, rel)
+	}
+	return result, nil
+}
+
+func pixContextPaths(ctx context.Context, r commandRunner, root string) ([]string, error) {
+	if _, err := os.Stat(filepath.Join(root, ".pixcontext")); os.IsNotExist(err) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	stdout, _, err := r.Run(ctx, root, nil, "git", "ls-files", "-z", "--others", "--ignored", "--exclude-from=.pixcontext")
+	if err != nil {
+		return nil, err
+	}
+	return splitNULTerminated(stdout), nil
+}
+
+func splitNULTerminated(data []byte) []string {
+	parts := strings.Split(string(data), "\x00")
+	paths := make([]string, 0, len(parts))
+	for _, rel := range parts {
+		if rel != "" {
+			paths = append(paths, rel)
+		}
+	}
+	return paths
+}
+
+func addUniquePath(result *[]string, seen map[string]struct{}, rel string) bool {
+	cleanRel := filepath.ToSlash(filepath.Clean(rel))
+	if cleanRel == "." || strings.HasPrefix(cleanRel, "../") || filepath.IsAbs(cleanRel) {
+		return false
+	}
+	if _, ok := seen[cleanRel]; ok {
+		return false
+	}
+	seen[cleanRel] = struct{}{}
+	*result = append(*result, cleanRel)
+	return true
 }
 
 func addPathToTar(tw *tar.Writer, root, rel string) error {

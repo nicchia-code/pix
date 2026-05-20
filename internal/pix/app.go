@@ -76,6 +76,7 @@ install creates or verifies pix host state, the managed VM, and managed SSH keys
 
 pix sync imports committed Pi results from the VM bridge Git repo into the host repo.
 pix sync --from-host copies the current host working tree into the VM worktree.
+If the repo has a .pixcontext file, matching files are copied even when ignored by Git.
 If the host has uncommitted changes, sync --from-host warns but continues.
 If the current repo is not registered yet, sync --from-host registers it automatically.
 The --from-host direction overwrites the VM-side copy of the current repo.`)

@@ -86,6 +86,17 @@ Copies the host repository into the VM. If the repository is not registered yet,
 
 The current implementation copies Git-tracked files and also untracked, non-ignored files from the host working tree. This is intentionally documented here because it is more permissive than the stricter committed/tracked-only model the project may move toward.
 
+If you need to give Pi local context that is ignored by Git, create a `.pixcontext` file at the repository root. It uses Git ignore syntax, but as an allow-list for extra files to copy into the VM during `pix sync --from-host`:
+
+```gitignore
+# copied to the VM even if .gitignore excludes it
+.env.example.local
+docs/private-context/
+*.local.md
+```
+
+These files are copied only into the VM worktree for Pi's context. During export, `pix` also writes the `.pixcontext` patterns into the VM worktree's `.git/info/exclude`, so a normal `git add -A` by Pi will not commit those context-only files.
+
 If the VM worktree contains unexported changes, `pix` requires `--force` before overwriting it:
 
 ```bash

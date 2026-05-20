@@ -353,6 +353,15 @@ git config user.email "pix@localhost"
 git remote set-url origin %[2]s
 find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
 tar -xf -
+if [ -f .pixcontext ]; then
+  mkdir -p .git/info
+  cat >> .git/info/exclude <<'EOF'
+
+# pix: files copied only as agent context
+# These patterns come from .pixcontext and keep copied context out of git add -A.
+EOF
+  cat .pixcontext >> .git/info/exclude
+fi
 `, shellQuote(cfg.WorktreePath), shellQuote(cfg.BridgePath), shellQuote(resultBranch))
 	return ssh.RunWithInput(ctx, "", tarData, script)
 }
