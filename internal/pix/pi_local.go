@@ -34,6 +34,11 @@ func syncLocalPiCustomizations(ctx context.Context, ssh *SSH) error {
 	if err := writePixExtension(ctx, ssh); err != nil {
 		return err
 	}
+	for _, sub := range []string{"git", "npm"} {
+		if err := syncPiAgentDir(ctx, ssh, filepath.Join(piDir, sub), sub); err != nil {
+			return err
+		}
+	}
 	packages, err := readLocalPiPackages(filepath.Join(piDir, "settings.json"))
 	if err != nil {
 		return err
@@ -200,6 +205,34 @@ rm -f /root/.pi/agent/extensions/pix-vm-context.ts
 cat > /root/.pi/agent/extensions/pix-ext.ts
 `
 	return ssh.RunWithInput(ctx, "", []byte(extension), script)
+}
+
+func syncPiAgentDir(ctx context.Context, ssh *SSH, localDir, name string) error {
+	info, err := os.Stat(localDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	archive, count, err := tarDirectory(localDir)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return nil
+	}
+	vmDir := fmt.Sprintf("/root/.pi/agent/%s", name)
+	script := fmt.Sprintf(`
+set -eu
+rm -rf %[1]s
+mkdir -p %[1]s
+tar -xf - -C %[1]s
+`, shellQuote(vmDir))
+	return ssh.RunWithInput(ctx, "", archive, script)
 }
 
 func syncLocalPiExtensions(ctx context.Context, ssh *SSH, extensionsDir string) error {
